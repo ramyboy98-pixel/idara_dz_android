@@ -74,13 +74,13 @@ class _FillCustomTemplatePageState extends State<FillCustomTemplatePage> {
                   ...fields.map(_buildFieldInput),
                   const SizedBox(height: 14),
                   AppButton(
-                    label: _isExporting ? 'جار إنشاء PDF...' : 'إنشاء PDF تجريبي',
+                    label: _isExporting ? 'جار إنشاء PDF...' : 'إنشاء PDF من النموذج',
                     icon: Icons.picture_as_pdf_rounded,
                     onPressed: _isExporting ? null : () => _exportPdf(fields),
                   ),
                   const SizedBox(height: 10),
                   const Text(
-                    'ملاحظة: هذه المرحلة تحفظ قيم الاستمارة وتصدر PDF تجريبي. المرحلة التالية ستستبدل الرموز داخل ملف النموذج نفسه ثم تحفظ النتيجة في الأرشيف.',
+                    'ملاحظة: الاستبدال يعمل الآن مع ملفات TXT و MD التي تحتوي رموزًا مثل {{الاسم_واللقب}}. إذا كان الملف PDF أو DOCX سيصدر التطبيق نسخة PDF منظمة من بيانات الاستمارة كحل مؤقت.',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: AppColors.muted,
@@ -198,14 +198,19 @@ class _FillCustomTemplatePageState extends State<FillCustomTemplatePage> {
 
     try {
       final valuesByLabel = <String, String>{};
+      final valuesByKey = <String, String>{};
       for (final field in fields) {
         final fieldId = field.id ?? field.sortOrder;
-        valuesByLabel[field.label] = _controllers[fieldId]?.text.trim() ?? '';
+        final value = _controllers[fieldId]?.text.trim() ?? '';
+        valuesByLabel[field.label] = value;
+        valuesByKey[field.keyName] = value;
       }
 
-      final filePath = await PdfExporter.exportSimpleDocument(
+      final filePath = await PdfExporter.exportTemplateDocument(
         title: widget.template.title,
-        fields: valuesByLabel,
+        templateFilePath: widget.template.templateFilePath,
+        valuesByKey: valuesByKey,
+        valuesByLabel: valuesByLabel,
       );
 
       await _archiveRepository.addPdfItem(
@@ -349,7 +354,7 @@ class _PlaceholderInfoCard extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           const Text(
-            'هذه الرموز هي الأماكن التي سيتعرف عليها التطبيق داخل ملف النموذج لاحقًا.',
+            'هذه الرموز هي الأماكن التي يتعرف عليها التطبيق داخل ملف النموذج ويستبدلها بالقيم عند إنشاء PDF.',
             style: TextStyle(color: AppColors.muted, height: 1.5),
           ),
           const SizedBox(height: 10),
