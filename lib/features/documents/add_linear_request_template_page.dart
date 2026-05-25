@@ -48,6 +48,8 @@ class _AddLinearRequestTemplatePageState extends State<AddLinearRequestTemplateP
             padding: const EdgeInsets.fromLTRB(18, 18, 18, 28),
             children: [
               const _InfoCard(),
+              const SizedBox(height: 12),
+              const _PlaceholderGuideCard(),
               const SizedBox(height: 16),
               _SectionCard(
                 title: 'معلومات النموذج',
@@ -91,7 +93,7 @@ class _AddLinearRequestTemplatePageState extends State<AddLinearRequestTemplateP
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     const Text(
-                      'أضف الحقول التي سيملؤها المستخدم لاحقًا. هذه الحقول ستُستعمل لملء النموذج آليًا في مرحلة التصدير.',
+                      'أضف الحقول التي سيملؤها المستخدم لاحقًا. لكل حقل سيظهر رمز خاص؛ ضع نفس الرمز داخل ملف النموذج في المكان الذي تريد أن تُملأ فيه المعلومة.',
                       style: TextStyle(
                         color: AppColors.muted,
                         fontSize: 13,
@@ -252,13 +254,63 @@ class _InfoCard extends StatelessWidget {
                 ),
                 SizedBox(height: 8),
                 Text(
-                  'ارفع ملف النموذج من الهاتف، ثم أنشئ الحقول التي ستظهر في استمارة المعلومات. لاحقًا سيملأ المستخدم هذه الحقول وسيتم توليد PDF آليًا.',
+                  'اكتب داخل ملف النموذج رموزًا مثل {{الاسم_واللقب}} في أماكن المعلومات. عند إنشاء حقول الاستمارة سيعرض التطبيق رمز كل حقل، ولاحقًا يستبدل هذه الرموز بالقيم المدخلة ويصدر PDF.',
                   style: TextStyle(
                     color: Color(0xFFD1D5DB),
                     height: 1.6,
                   ),
                 ),
               ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+
+class _PlaceholderGuideCard extends StatelessWidget {
+  const _PlaceholderGuideCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEFF6FF),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: const Color(0xFFBFDBFE)),
+      ),
+      child: const Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.auto_fix_high_rounded, color: AppColors.blue),
+              SizedBox(width: 8),
+              Text(
+                'كيف يعرف التطبيق أماكن ملء المعلومات؟',
+                style: TextStyle(
+                  color: AppColors.text,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: 10),
+          Text(
+            'داخل ملف النموذج تضع رموزًا بين قوسين مزدوجين. مثال: {{الاسم_واللقب}} أو {{تاريخ_الطلب}}. عند ملء الاستمارة، سيبحث التطبيق عن هذه الرموز ويستبدلها تلقائيًا بالمعلومات.',
+            style: TextStyle(color: AppColors.muted, height: 1.6),
+          ),
+          SizedBox(height: 10),
+          Text(
+            'مثال داخل النموذج: أنا الممضي أسفله {{الاسم_واللقب}} الساكن بـ {{العنوان}} أتقدم إلى سيادتكم بهذا الطلب.',
+            style: TextStyle(
+              color: AppColors.text,
+              height: 1.6,
+              fontWeight: FontWeight.w700,
             ),
           ),
         ],
@@ -372,6 +424,45 @@ class _NoFieldsBox extends StatelessWidget {
   }
 }
 
+
+class _PlaceholderPreview extends StatelessWidget {
+  const _PlaceholderPreview({required this.placeholder});
+
+  final String placeholder;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'الرمز الذي يجب وضعه داخل النموذج:',
+            style: TextStyle(color: AppColors.muted, fontSize: 12),
+          ),
+          const SizedBox(height: 4),
+          SelectableText(
+            placeholder,
+            textDirection: TextDirection.ltr,
+            style: const TextStyle(
+              color: AppColors.blue,
+              fontSize: 15,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _FieldEditor extends StatefulWidget {
   const _FieldEditor({
     required this.index,
@@ -388,6 +479,32 @@ class _FieldEditor extends StatefulWidget {
 }
 
 class _FieldEditorState extends State<_FieldEditor> {
+  @override
+  void initState() {
+    super.initState();
+    widget.field.labelController.addListener(_onLabelChanged);
+  }
+
+  @override
+  void dispose() {
+    widget.field.labelController.removeListener(_onLabelChanged);
+    super.dispose();
+  }
+
+  void _onLabelChanged() {
+    if (mounted) setState(() {});
+  }
+
+  String _placeholderFor(String label) {
+    final normalized = label
+        .trim()
+        .toLowerCase()
+        .replaceAll(RegExp(r'\s+'), '_')
+        .replaceAll(RegExp(r'[^\u0600-\u06FFa-z0-9_]'), '');
+    final key = normalized.isEmpty ? 'field_${widget.index + 1}' : normalized;
+    return '{{$key}}';
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -421,6 +538,8 @@ class _FieldEditorState extends State<_FieldEditor> {
               hintText: 'مثال: الاسم واللقب',
             ),
           ),
+          const SizedBox(height: 8),
+          _PlaceholderPreview(placeholder: _placeholderFor(widget.field.labelController.text)),
           const SizedBox(height: 10),
           DropdownButtonFormField<String>(
             value: widget.field.fieldType,
