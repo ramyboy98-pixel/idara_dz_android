@@ -28,6 +28,8 @@ class CustomTemplatesRepository {
     required String title,
     required String description,
     required String? templateFilePath,
+    required String? editorContent,
+    required TemplatePageSettings pageSettings,
     required List<NewTemplateField> fields,
   }) async {
     final db = await DatabaseHelper.instance.database;
@@ -37,6 +39,16 @@ class CustomTemplatesRepository {
         'title': title,
         'description': description,
         'template_file_path': templateFilePath,
+        'editor_content': editorContent,
+        'page_size': pageSettings.pageSize,
+        'orientation': pageSettings.orientation,
+        'margin_top': pageSettings.marginTop,
+        'margin_right': pageSettings.marginRight,
+        'margin_bottom': pageSettings.marginBottom,
+        'margin_left': pageSettings.marginLeft,
+        'text_direction': pageSettings.textDirection,
+        'base_font_size': pageSettings.baseFontSize,
+        'line_spacing': pageSettings.lineSpacing,
         'created_at': DateTime.now().toIso8601String(),
       });
 
@@ -101,4 +113,29 @@ class NewTemplateField {
 
   final String label;
   final String fieldType;
+}
+
+
+class TemplatePageSettings {
+  const TemplatePageSettings({
+    this.pageSize = 'A4',
+    this.orientation = 'portrait',
+    this.marginTop = 32,
+    this.marginRight = 32,
+    this.marginBottom = 32,
+    this.marginLeft = 32,
+    this.textDirection = 'rtl',
+    this.baseFontSize = 14,
+    this.lineSpacing = 6,
+  });
+
+  final String pageSize;
+  final String orientation;
+  final double marginTop;
+  final double marginRight;
+  final double marginBottom;
+  final double marginLeft;
+  final String textDirection;
+  final double baseFontSize;
+  final double lineSpacing;
 }
