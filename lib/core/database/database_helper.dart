@@ -16,7 +16,12 @@ class DatabaseHelper {
   Future<Database> _initDatabase() async {
     final dbPath = await getDatabasesPath();
     final path = join(dbPath, 'idara_dz.db');
-    return openDatabase(path, version: 1, onCreate: _onCreate);
+    return openDatabase(
+      path,
+      version: 2,
+      onCreate: _onCreate,
+      onUpgrade: _onUpgrade,
+    );
   }
 
   Future<void> _onCreate(Database db, int version) async {
@@ -33,8 +38,10 @@ class DatabaseHelper {
       CREATE TABLE document_templates (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         category_id INTEGER,
+        category_name TEXT NOT NULL DEFAULT 'طلب خطي',
         title TEXT NOT NULL,
         description TEXT,
+        template_file_path TEXT,
         created_at TEXT NOT NULL
       )
     ''');
@@ -73,6 +80,36 @@ class DatabaseHelper {
     ''');
 
     await _seed(db);
+  }
+
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      await _addColumnIfMissing(
+        db,
+        tableName: 'document_templates',
+        columnName: 'category_name',
+        sql: "ALTER TABLE document_templates ADD COLUMN category_name TEXT NOT NULL DEFAULT 'طلب خطي'",
+      );
+      await _addColumnIfMissing(
+        db,
+        tableName: 'document_templates',
+        columnName: 'template_file_path',
+        sql: 'ALTER TABLE document_templates ADD COLUMN template_file_path TEXT',
+      );
+    }
+  }
+
+  Future<void> _addColumnIfMissing(
+    Database db, {
+    required String tableName,
+    required String columnName,
+    required String sql,
+  }) async {
+    final columns = await db.rawQuery('PRAGMA table_info($tableName)');
+    final exists = columns.any((column) => column['name'] == columnName);
+    if (!exists) {
+      await db.execute(sql);
+    }
   }
 
   Future<void> _seed(Database db) async {
