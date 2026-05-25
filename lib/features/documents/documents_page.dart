@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_search_field.dart';
 import '../../widgets/app_topbar.dart';
+import 'linear_requests_page.dart';
 
 class DocumentsPage extends StatefulWidget {
   const DocumentsPage({super.key});
@@ -20,7 +21,7 @@ class _DocumentsPageState extends State<DocumentsPage> {
       subtitle: 'طلبات التوظيف، المسابقات، التحويلات والطلبات الإدارية.',
       icon: '📄',
       accentColor: Color(0xFF2563EB),
-      nextStep: 'سنبدأ به أولًا',
+      nextStep: 'جاهز للفتح',
     ),
     _DocumentSection(
       title: 'تصريح شرفي',
@@ -89,7 +90,7 @@ class _DocumentsPageState extends State<DocumentsPage> {
                       final section = filteredSections[index];
                       return _DocumentSectionCard(
                         section: section,
-                        onTap: () => _showComingSoon(context, section),
+                        onTap: () => _openSection(context, section),
                       );
                     },
                   );
@@ -103,16 +104,21 @@ class _DocumentsPageState extends State<DocumentsPage> {
     );
   }
 
-  void _showComingSoon(BuildContext context, _DocumentSection section) {
-    final message = section.title == 'طلب خطي'
-        ? 'المرحلة القادمة: فتح قسم طلب خطي وإضافة بطاقات النماذج.'
-        : 'سيتم تجهيز قسم ${section.title} بعد إكمال طلب خطي.';
+  void _openSection(BuildContext context, _DocumentSection section) {
+    if (section.title == 'طلب خطي') {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => const LinearRequestsPage(),
+        ),
+      );
+      return;
+    }
 
     ScaffoldMessenger.of(context)
       ..clearSnackBars()
       ..showSnackBar(
         SnackBar(
-          content: Text(message),
+          content: Text('سيتم تجهيز قسم ${section.title} بعد إكمال طلب خطي.'),
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -343,7 +349,7 @@ class _NextWorkCard extends StatelessWidget {
           SizedBox(width: 12),
           Expanded(
             child: Text(
-              'الخطوة القادمة: نفتح قسم طلب خطي ونضيف داخله بطاقات النماذج مثل طلب توظيف، مسابقة الجمارك، الشرطة، الحماية المدنية وغيرها.',
+              'قسم طلب خطي أصبح قابلًا للفتح الآن. اضغط على بطاقة طلب خطي للدخول إلى بطاقات النماذج، وبعدها نبدأ بإضافة نموذج الإدخال والتصدير PDF.',
               style: TextStyle(
                 color: AppColors.text,
                 fontSize: 13.5,
