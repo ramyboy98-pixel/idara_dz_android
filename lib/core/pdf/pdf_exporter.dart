@@ -314,35 +314,104 @@ class PdfExporter {
     );
 
     final xml = utf8.decode(documentFile.content as List<int>, allowMalformed: true);
-    final paragraphMatches = RegExp(
-      r'<w:p[\s\S]*?</w:p>',
-      multiLine: true,
-    ).allMatches(xml);
+    final bodyMatch = RegExp(r'<w:body[\s\S]*?</w:body>').firstMatch(xml);
+    final bodyXml = bodyMatch?.group(0) ?? xml;
 
-    final paragraphs = <String>[];
-    for (final paragraphMatch in paragraphMatches) {
-      final paragraphXml = paragraphMatch.group(0) ?? '';
-      final textMatches = RegExp(
-        r'<w:t(?:\s[^>]*)?>([\s\S]*?)</w:t>',
-        multiLine: true,
-      ).allMatches(paragraphXml);
-      final buffer = StringBuffer();
-      for (final textMatch in textMatches) {
-        buffer.write(_decodeXmlText(textMatch.group(1) ?? ''));
-      }
-      final paragraph = buffer.toString().trimRight();
-      if (paragraph.trim().isNotEmpty) {
-        paragraphs.add(paragraph);
-      } else if (paragraphs.isNotEmpty && paragraphs.last.isNotEmpty) {
-        paragraphs.add('');
+    final blocks = <String>[];
+    final blockMatches = RegExp(
+      r'<w:(p|tbl)\b[\s\S]*?</w:\1>',
+      multiLine: true,
+    ).allMatches(bodyXml);
+
+    for (final blockMatch in blockMatches) {
+      final blockXml = blockMatch.group(0) ?? '';
+      if (blockXml.startsWith('<w:tbl')) {
+        final tableText = _extractDocxTableText(blockXml);
+        if (tableText.trim().isNotEmpty) {
+          blocks.add(tableText);
+        }
+      } else {
+        final paragraphText = _extractDocxParagraphText(blockXml);
+        if (paragraphText.trim().isNotEmpty) {
+          blocks.add(paragraphText);
+        } else if (blocks.isNotEmpty && blocks.last.isNotEmpty) {
+          blocks.add('');
+        }
       }
     }
 
-    final text = paragraphs.join('\n');
+    final text = _cleanExtractedDocxText(blocks.join('\n'));
     if (text.trim().isEmpty) {
       throw Exception('لم يتم استخراج نص من ملف DOCX.');
     }
     return text;
+  }
+
+  static String _extractDocxTableText(String tableXml) {
+    final rows = <String>[];
+    final rowMatches = RegExp(
+      r'<w:tr\b[\s\S]*?</w:tr>',
+      multiLine: true,
+    ).allMatches(tableXml);
+
+    for (final rowMatch in rowMatches) {
+      final rowXml = rowMatch.group(0) ?? '';
+      final cells = <String>[];
+      final cellMatches = RegExp(
+        r'<w:tc\b[\s\S]*?</w:tc>',
+        multiLine: true,
+      ).allMatches(rowXml);
+
+      for (final cellMatch in cellMatches) {
+        final cellXml = cellMatch.group(0) ?? '';
+        final paragraphs = RegExp(
+          r'<w:p\b[\s\S]*?</w:p>',
+          multiLine: true,
+        ).allMatches(cellXml).map((match) {
+          return _extractDocxParagraphText(match.group(0) ?? '');
+        }).where((value) => value.trim().isNotEmpty).toList();
+
+        final cellText = paragraphs.join(' ').trim();
+        if (cellText.isNotEmpty) {
+          cells.add(cellText);
+        }
+      }
+
+      if (cells.isNotEmpty) {
+        rows.add(cells.join('     '));
+      }
+    }
+
+    return rows.join('\n');
+  }
+
+  static String _extractDocxParagraphText(String paragraphXml) {
+    final preparedXml = paragraphXml
+        .replaceAll(RegExp(r'<w:tab\s*/>'), '     ')
+        .replaceAll(RegExp(r'<w:br\s*/>'), '\n')
+        .replaceAll(RegExp(r'<w:cr\s*/>'), '\n');
+
+    final textMatches = RegExp(
+      r'<w:t(?:\s[^>]*)?>([\s\S]*?)</w:t>',
+      multiLine: true,
+    ).allMatches(preparedXml);
+
+    final buffer = StringBuffer();
+    for (final textMatch in textMatches) {
+      buffer.write(_decodeXmlText(textMatch.group(1) ?? ''));
+    }
+    return buffer.toString().trimRight();
+  }
+
+  static String _cleanExtractedDocxText(String value) {
+    return value
+        .replaceAll(RegExp(r'[\u0000-\u0008\u000B\u000C\u000E-\u001F]'), '')
+        .replaceAll(RegExp(r'[\uE000-\uF8FF\uFFFC]'), '')
+        .replaceAll(RegExp(r'\n{3,}'), '\n\n')
+        .split('\n')
+        .map((line) => line.replaceAll(RegExp(r'[ \t]{2,}'), '     ').trimRight())
+        .join('\n')
+        .trim();
   }
 
   static String _decodeXmlText(String value) {
