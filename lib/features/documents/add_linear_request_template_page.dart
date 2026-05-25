@@ -136,7 +136,7 @@ class _AddLinearRequestTemplatePageState extends State<AddLinearRequestTemplateP
   Future<void> _pickTemplateFile() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: ['pdf', 'doc', 'docx', 'txt'],
+      allowedExtensions: ['txt', 'md', 'pdf', 'doc', 'docx'],
       allowMultiple: false,
     );
 
@@ -167,7 +167,7 @@ class _AddLinearRequestTemplatePageState extends State<AddLinearRequestTemplateP
     if (!isValid) return;
 
     if (_templatePath == null) {
-      _showMessage('اختر ملف النموذج من الهاتف أولًا.');
+      _showMessage('اختر ملف النموذج من الهاتف (الأفضل الآن TXT أو MD) أولًا.');
       return;
     }
 
@@ -254,7 +254,7 @@ class _InfoCard extends StatelessWidget {
                 ),
                 SizedBox(height: 8),
                 Text(
-                  'اكتب داخل ملف النموذج رموزًا مثل {{الاسم_واللقب}} في أماكن المعلومات. عند إنشاء حقول الاستمارة سيعرض التطبيق رمز كل حقل، ولاحقًا يستبدل هذه الرموز بالقيم المدخلة ويصدر PDF.',
+                  'اكتب داخل ملف النموذج رموزًا مثل {{الاسم_واللقب}} في أماكن المعلومات. حاليًا يتم استبدال الرموز مباشرة في ملفات TXT و MD ثم تصديرها PDF. ملفات PDF و DOCX تُحفظ كمرجع وسنضيف دعمها الكامل لاحقًا.',
                   style: TextStyle(
                     color: Color(0xFFD1D5DB),
                     height: 1.6,
@@ -301,7 +301,7 @@ class _PlaceholderGuideCard extends StatelessWidget {
           ),
           SizedBox(height: 10),
           Text(
-            'داخل ملف النموذج تضع رموزًا بين قوسين مزدوجين. مثال: {{الاسم_واللقب}} أو {{تاريخ_الطلب}}. عند ملء الاستمارة، سيبحث التطبيق عن هذه الرموز ويستبدلها تلقائيًا بالمعلومات.',
+            'داخل ملف النموذج النصي TXT أو MD تضع رموزًا بين قوسين مزدوجين. مثال: {{الاسم_واللقب}} أو {{تاريخ_الطلب}}. عند ملء الاستمارة، سيبحث التطبيق عن هذه الرموز ويستبدلها تلقائيًا بالمعلومات.',
             style: TextStyle(color: AppColors.muted, height: 1.6),
           ),
           SizedBox(height: 10),
@@ -390,7 +390,7 @@ class _TemplateFileBox extends StatelessWidget {
             const SizedBox(width: 10),
             Expanded(
               child: Text(
-                hasFile ? fileName! : 'اختر ملف النموذج من الهاتف',
+                hasFile ? fileName! : 'اختر ملف النموذج من الهاتف (الأفضل الآن TXT أو MD)',
                 style: TextStyle(
                   color: hasFile ? AppColors.text : AppColors.muted,
                   fontWeight: FontWeight.w800,
