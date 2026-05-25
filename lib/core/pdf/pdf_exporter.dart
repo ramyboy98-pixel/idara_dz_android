@@ -1,6 +1,8 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:archive/archive.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:path/path.dart' as p;
@@ -22,6 +24,7 @@ class PdfExporter {
 
     if (templatePath.isNotEmpty && await File(templatePath).exists()) {
       final extension = p.extension(templatePath).toLowerCase();
+
       if (extension == '.txt' || extension == '.md') {
         final templateText = await File(templatePath).readAsString();
         final filledText = fillPlaceholders(
@@ -30,9 +33,21 @@ class PdfExporter {
           valuesByLabel: valuesByLabel,
         );
         final bytes = await _buildTextTemplateDocument(
-          title: title,
           filledText: filledText,
+        );
+        final file = await _savePdfFile(title: title, bytes: bytes);
+        return file.path;
+      }
+
+      if (extension == '.docx') {
+        final templateText = await _extractTextFromDocx(templatePath);
+        final filledText = fillPlaceholders(
+          templateText: templateText,
+          valuesByKey: valuesByKey,
           valuesByLabel: valuesByLabel,
+        );
+        final bytes = await _buildTextTemplateDocument(
+          filledText: filledText,
         );
         final file = await _savePdfFile(title: title, bytes: bytes);
         return file.path;
@@ -110,19 +125,18 @@ class PdfExporter {
   }
 
   static Future<Uint8List> _buildTextTemplateDocument({
-    required String title,
     required String filledText,
-    required Map<String, String> valuesByLabel,
   }) async {
     final pdf = pw.Document();
-    final now = DateFormat('yyyy/MM/dd - HH:mm').format(DateTime.now());
     final lines = filledText.split(RegExp(r'\r?\n'));
+    final theme = await _buildArabicPdfTheme();
 
     pdf.addPage(
       pw.MultiPage(
-        pageTheme: const pw.PageTheme(
+        pageTheme: pw.PageTheme(
           textDirection: pw.TextDirection.rtl,
-          margin: pw.EdgeInsets.all(32),
+          margin: const pw.EdgeInsets.all(32),
+          theme: theme,
         ),
         build: (context) {
           return [
@@ -131,27 +145,13 @@ class PdfExporter {
               child: pw.Column(
                 crossAxisAlignment: pw.CrossAxisAlignment.stretch,
                 children: [
-                  pw.Text(
-                    title,
-                    textAlign: pw.TextAlign.center,
-                    style: pw.TextStyle(
-                      fontSize: 22,
-                      fontWeight: pw.FontWeight.bold,
-                    ),
-                  ),
-                  pw.SizedBox(height: 8),
-                  pw.Text(
-                    'تم إنشاؤه بواسطة IDARA DZ - $now',
-                    textAlign: pw.TextAlign.center,
-                    style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey700),
-                  ),
-                  pw.SizedBox(height: 28),
                   ...lines.map(
                     (line) => pw.Padding(
                       padding: const pw.EdgeInsets.only(bottom: 7),
                       child: pw.Text(
-                        line.isEmpty ? ' ' : line,
+                        line.trim().isEmpty ? ' ' : line,
                         textAlign: pw.TextAlign.right,
+                        textDirection: pw.TextDirection.rtl,
                         style: const pw.TextStyle(fontSize: 14, lineSpacing: 6),
                       ),
                     ),
@@ -167,6 +167,7 @@ class PdfExporter {
                       child: pw.Text(
                         'تنبيه: بقيت رموز غير معوضة داخل النموذج. تأكد أن أسماء الحقول مطابقة للرموز.',
                         textAlign: pw.TextAlign.right,
+                        textDirection: pw.TextDirection.rtl,
                         style: const pw.TextStyle(fontSize: 10, color: PdfColors.orange900),
                       ),
                     ),
@@ -188,12 +189,14 @@ class PdfExporter {
   }) async {
     final pdf = pw.Document();
     final now = DateFormat('yyyy/MM/dd - HH:mm').format(DateTime.now());
+    final theme = await _buildArabicPdfTheme();
 
     pdf.addPage(
       pw.MultiPage(
-        pageTheme: const pw.PageTheme(
+        pageTheme: pw.PageTheme(
           textDirection: pw.TextDirection.rtl,
-          margin: pw.EdgeInsets.all(32),
+          margin: const pw.EdgeInsets.all(32),
+          theme: theme,
         ),
         build: (context) {
           return [
@@ -202,21 +205,6 @@ class PdfExporter {
               child: pw.Column(
                 crossAxisAlignment: pw.CrossAxisAlignment.stretch,
                 children: [
-                  pw.Text(
-                    title,
-                    textAlign: pw.TextAlign.center,
-                    style: pw.TextStyle(
-                      fontSize: 22,
-                      fontWeight: pw.FontWeight.bold,
-                    ),
-                  ),
-                  pw.SizedBox(height: 8),
-                  pw.Text(
-                    'تم إنشاؤه بواسطة IDARA DZ - $now',
-                    textAlign: pw.TextAlign.center,
-                    style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey700),
-                  ),
-                  pw.SizedBox(height: 28),
                   ...fields.entries.map(
                     (entry) => pw.Container(
                       margin: const pw.EdgeInsets.only(bottom: 10),
@@ -232,13 +220,17 @@ class PdfExporter {
                             flex: 2,
                             child: pw.Text(
                               entry.key,
+                              textDirection: pw.TextDirection.rtl,
                               style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
                             ),
                           ),
                           pw.SizedBox(width: 12),
                           pw.Expanded(
                             flex: 4,
-                            child: pw.Text(entry.value.isEmpty ? '-' : entry.value),
+                            child: pw.Text(
+                              entry.value.isEmpty ? '-' : entry.value,
+                              textDirection: pw.TextDirection.rtl,
+                            ),
                           ),
                         ],
                       ),
@@ -253,6 +245,82 @@ class PdfExporter {
     );
 
     return pdf.save();
+  }
+
+  static Future<pw.ThemeData> _buildArabicPdfTheme() async {
+    final regular = await _loadAndroidArabicFont();
+    if (regular == null) {
+      return pw.ThemeData.base();
+    }
+    return pw.ThemeData.withFont(base: regular, bold: regular);
+  }
+
+  static Future<pw.Font?> _loadAndroidArabicFont() async {
+    final candidates = <String>[
+      '/system/fonts/NotoNaskhArabic-Regular.ttf',
+      '/system/fonts/NotoSansArabic-Regular.ttf',
+      '/system/fonts/DroidNaskh-Regular.ttf',
+      '/system/fonts/Roboto-Regular.ttf',
+    ];
+
+    for (final path in candidates) {
+      final file = File(path);
+      if (await file.exists()) {
+        final bytes = await file.readAsBytes();
+        return pw.Font.ttf(bytes.buffer.asByteData());
+      }
+    }
+
+    return null;
+  }
+
+  static Future<String> _extractTextFromDocx(String filePath) async {
+    final bytes = await File(filePath).readAsBytes();
+    final archive = ZipDecoder().decodeBytes(bytes);
+    final documentFile = archive.files.firstWhere(
+      (file) => file.name == 'word/document.xml',
+      orElse: () => throw Exception('ملف DOCX غير صالح: لم يتم العثور على word/document.xml'),
+    );
+
+    final xml = utf8.decode(documentFile.content as List<int>, allowMalformed: true);
+    final paragraphMatches = RegExp(
+      r'<w:p[\s\S]*?</w:p>',
+      multiLine: true,
+    ).allMatches(xml);
+
+    final paragraphs = <String>[];
+    for (final paragraphMatch in paragraphMatches) {
+      final paragraphXml = paragraphMatch.group(0) ?? '';
+      final textMatches = RegExp(
+        r'<w:t(?:\s[^>]*)?>([\s\S]*?)</w:t>',
+        multiLine: true,
+      ).allMatches(paragraphXml);
+      final buffer = StringBuffer();
+      for (final textMatch in textMatches) {
+        buffer.write(_decodeXmlText(textMatch.group(1) ?? ''));
+      }
+      final paragraph = buffer.toString().trimRight();
+      if (paragraph.trim().isNotEmpty) {
+        paragraphs.add(paragraph);
+      } else if (paragraphs.isNotEmpty && paragraphs.last.isNotEmpty) {
+        paragraphs.add('');
+      }
+    }
+
+    final text = paragraphs.join('\n');
+    if (text.trim().isEmpty) {
+      throw Exception('لم يتم استخراج نص من ملف DOCX.');
+    }
+    return text;
+  }
+
+  static String _decodeXmlText(String value) {
+    return value
+        .replaceAll('&lt;', '<')
+        .replaceAll('&gt;', '>')
+        .replaceAll('&amp;', '&')
+        .replaceAll('&quot;', '"')
+        .replaceAll('&apos;', "'");
   }
 
   static bool _hasUnfilledPlaceholders(String text) {
