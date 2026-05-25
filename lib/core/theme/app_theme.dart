@@ -9,7 +9,7 @@ class AppTheme {
       colorScheme: ColorScheme.fromSeed(
         seedColor: AppColors.blue,
         brightness: Brightness.light,
-        background: AppColors.background,
+        surface: AppColors.background,
       ),
     );
 
