@@ -73,29 +73,61 @@ class PdfExporter {
     required Map<String, String> valuesByKey,
     required Map<String, String> valuesByLabel,
   }) {
-    var output = templateText;
+    final replacements = <String, String>{};
+
+    void addReplacement(String rawKey, String value) {
+      final key = rawKey.trim();
+      if (key.isEmpty) return;
+
+      replacements[key] = value;
+      replacements[normalizePlaceholderKey(key)] = value;
+      replacements[_compactPlaceholderKey(key)] = value;
+    }
 
     for (final entry in valuesByKey.entries) {
-      output = output.replaceAll('{{${entry.key}}}', entry.value);
+      addReplacement(entry.key, entry.value);
     }
 
     for (final entry in valuesByLabel.entries) {
-      final normalizedLabel = normalizePlaceholderKey(entry.key);
-      output = output.replaceAll('{{${entry.key}}}', entry.value);
-      output = output.replaceAll('{{$normalizedLabel}}', entry.value);
+      addReplacement(entry.key, entry.value);
     }
 
-    return output;
+    return templateText.replaceAllMapped(
+      RegExp(r'\{\{([\s\S]*?)\}\}'),
+      (match) {
+        final rawPlaceholder = match.group(1) ?? '';
+        final candidates = <String>[
+          rawPlaceholder.trim(),
+          normalizePlaceholderKey(rawPlaceholder),
+          _compactPlaceholderKey(rawPlaceholder),
+        ];
+
+        for (final candidate in candidates) {
+          final value = replacements[candidate];
+          if (value != null) return value;
+        }
+
+        // Unknown placeholders should not appear as broken squares in the final PDF.
+        return '';
+      },
+    );
   }
 
   static String normalizePlaceholderKey(String text) {
     return text
+        .replaceAll(RegExp(r'[\u200e\u200f\u202a-\u202e]'), '')
+        .replaceAll(RegExp(r'[\u064b-\u065f\u0670]'), '')
+        .replaceAll('ـ', '')
         .trim()
-        .replaceAll(RegExp(r'\s+'), '_')
         .replaceAll(RegExp(r'[{}]'), '')
+        .replaceAll(RegExp(r'\s+'), '_')
         .replaceAll(RegExp(r'[^\u0600-\u06FFa-zA-Z0-9_]'), '_')
         .replaceAll(RegExp(r'_+'), '_')
         .replaceAll(RegExp(r'^_|_$'), '');
+  }
+
+  static String _compactPlaceholderKey(String text) {
+    return normalizePlaceholderKey(text).replaceAll('_', '').toLowerCase();
   }
 
   static Future<void> sharePdf(String filePath) async {
