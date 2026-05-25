@@ -1,8 +1,6 @@
-import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:archive/archive.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:path/path.dart' as p;
@@ -17,14 +15,45 @@ class PdfExporter {
   static Future<String> exportTemplateDocument({
     required String title,
     required String? templateFilePath,
+    required String? editorContent,
+    required String pageSize,
+    required String orientation,
+    required double marginTop,
+    required double marginRight,
+    required double marginBottom,
+    required double marginLeft,
+    required String textDirection,
+    required double baseFontSize,
+    required double lineSpacing,
     required Map<String, String> valuesByKey,
     required Map<String, String> valuesByLabel,
   }) async {
-    final templatePath = templateFilePath?.trim() ?? '';
+    final editorText = editorContent?.trim() ?? '';
+    if (editorText.isNotEmpty) {
+      final filledText = fillPlaceholders(
+        templateText: editorText,
+        valuesByKey: valuesByKey,
+        valuesByLabel: valuesByLabel,
+      );
+      final bytes = await _buildTextTemplateDocument(
+        filledText: filledText,
+        pageSize: pageSize,
+        orientation: orientation,
+        marginTop: marginTop,
+        marginRight: marginRight,
+        marginBottom: marginBottom,
+        marginLeft: marginLeft,
+        textDirection: textDirection,
+        baseFontSize: baseFontSize,
+        lineSpacing: lineSpacing,
+      );
+      final file = await _savePdfFile(title: title, bytes: bytes);
+      return file.path;
+    }
 
+    final templatePath = templateFilePath?.trim() ?? '';
     if (templatePath.isNotEmpty && await File(templatePath).exists()) {
       final extension = p.extension(templatePath).toLowerCase();
-
       if (extension == '.txt' || extension == '.md') {
         final templateText = await File(templatePath).readAsString();
         final filledText = fillPlaceholders(
@@ -34,20 +63,15 @@ class PdfExporter {
         );
         final bytes = await _buildTextTemplateDocument(
           filledText: filledText,
-        );
-        final file = await _savePdfFile(title: title, bytes: bytes);
-        return file.path;
-      }
-
-      if (extension == '.docx') {
-        final templateText = await _extractTextFromDocx(templatePath);
-        final filledText = fillPlaceholders(
-          templateText: templateText,
-          valuesByKey: valuesByKey,
-          valuesByLabel: valuesByLabel,
-        );
-        final bytes = await _buildTextTemplateDocument(
-          filledText: filledText,
+          pageSize: 'A4',
+          orientation: 'portrait',
+          marginTop: 32,
+          marginRight: 32,
+          marginBottom: 32,
+          marginLeft: 32,
+          textDirection: 'rtl',
+          baseFontSize: 14,
+          lineSpacing: 6,
         );
         final file = await _savePdfFile(title: title, bytes: bytes);
         return file.path;
@@ -107,7 +131,6 @@ class PdfExporter {
           if (value != null) return value;
         }
 
-        // Unknown placeholders should not appear as broken squares in the final PDF.
         return '';
       },
     );
@@ -158,34 +181,43 @@ class PdfExporter {
 
   static Future<Uint8List> _buildTextTemplateDocument({
     required String filledText,
+    required String pageSize,
+    required String orientation,
+    required double marginTop,
+    required double marginRight,
+    required double marginBottom,
+    required double marginLeft,
+    required String textDirection,
+    required double baseFontSize,
+    required double lineSpacing,
   }) async {
     final pdf = pw.Document();
     final lines = filledText.split(RegExp(r'\r?\n'));
     final theme = await _buildArabicPdfTheme();
+    final pageFormat = _pageFormatFor(pageSize, orientation);
+    final direction = textDirection == 'ltr' ? pw.TextDirection.ltr : pw.TextDirection.rtl;
 
     pdf.addPage(
       pw.MultiPage(
         pageTheme: pw.PageTheme(
-          textDirection: pw.TextDirection.rtl,
-          margin: const pw.EdgeInsets.all(32),
+          pageFormat: pageFormat,
+          textDirection: direction,
+          margin: pw.EdgeInsets.fromLTRB(marginLeft, marginTop, marginRight, marginBottom),
           theme: theme,
         ),
         build: (context) {
           return [
             pw.Directionality(
-              textDirection: pw.TextDirection.rtl,
+              textDirection: direction,
               child: pw.Column(
                 crossAxisAlignment: pw.CrossAxisAlignment.stretch,
                 children: [
                   ...lines.map(
-                    (line) => pw.Padding(
-                      padding: const pw.EdgeInsets.only(bottom: 7),
-                      child: pw.Text(
-                        line.trim().isEmpty ? ' ' : line,
-                        textAlign: pw.TextAlign.right,
-                        textDirection: pw.TextDirection.rtl,
-                        style: const pw.TextStyle(fontSize: 14, lineSpacing: 6),
-                      ),
+                    (line) => _buildEditorLine(
+                      line,
+                      direction: direction,
+                      baseFontSize: baseFontSize,
+                      lineSpacing: lineSpacing,
                     ),
                   ),
                   if (_hasUnfilledPlaceholders(filledText)) ...[
@@ -213,6 +245,76 @@ class PdfExporter {
     );
 
     return pdf.save();
+  }
+
+  static PdfPageFormat _pageFormatFor(String pageSize, String orientation) {
+    final base = pageSize == 'A5' ? PdfPageFormat.a5 : PdfPageFormat.a4;
+    return orientation == 'landscape' ? base.landscape : base;
+  }
+
+  static pw.Widget _buildEditorLine(
+    String rawLine, {
+    required pw.TextDirection direction,
+    required double baseFontSize,
+    required double lineSpacing,
+  }) {
+    final line = rawLine.trimRight();
+    if (line.trim() == '[LINE]') {
+      return pw.Padding(
+        padding: const pw.EdgeInsets.symmetric(vertical: 8),
+        child: pw.Divider(color: PdfColors.grey500),
+      );
+    }
+
+    final parsed = _parseEditorLine(line);
+    final text = parsed.text.trim().isEmpty ? ' ' : parsed.text;
+    return pw.Padding(
+      padding: const pw.EdgeInsets.only(bottom: 7),
+      child: pw.Text(
+        text,
+        textAlign: parsed.align,
+        textDirection: direction,
+        style: pw.TextStyle(
+          fontSize: parsed.isTitle ? baseFontSize + 4 : baseFontSize,
+          fontWeight: parsed.bold || parsed.isTitle ? pw.FontWeight.bold : pw.FontWeight.normal,
+          lineSpacing: lineSpacing,
+        ),
+      ),
+    );
+  }
+
+  static _ParsedEditorLine _parseEditorLine(String line) {
+    var text = line;
+    var align = pw.TextAlign.right;
+    var bold = false;
+    var isTitle = false;
+
+    bool hasTag(String tag) => text.contains('[$tag]') && text.contains('[/$tag]');
+    String stripTag(String tag) => text.replaceAll('[$tag]', '').replaceAll('[/$tag]', '');
+
+    if (hasTag('CENTER')) {
+      align = pw.TextAlign.center;
+      text = stripTag('CENTER');
+    } else if (hasTag('LEFT')) {
+      align = pw.TextAlign.left;
+      text = stripTag('LEFT');
+    } else if (hasTag('RIGHT')) {
+      align = pw.TextAlign.right;
+      text = stripTag('RIGHT');
+    }
+
+    if (hasTag('B')) {
+      bold = true;
+      text = stripTag('B');
+    }
+
+    if (hasTag('TITLE')) {
+      isTitle = true;
+      align = pw.TextAlign.center;
+      text = stripTag('TITLE');
+    }
+
+    return _ParsedEditorLine(text: text, align: align, bold: bold, isTitle: isTitle);
   }
 
   static Future<Uint8List> _buildSimpleDocument({
@@ -305,124 +407,6 @@ class PdfExporter {
     return null;
   }
 
-  static Future<String> _extractTextFromDocx(String filePath) async {
-    final bytes = await File(filePath).readAsBytes();
-    final archive = ZipDecoder().decodeBytes(bytes);
-    final documentFile = archive.files.firstWhere(
-      (file) => file.name == 'word/document.xml',
-      orElse: () => throw Exception('ملف DOCX غير صالح: لم يتم العثور على word/document.xml'),
-    );
-
-    final xml = utf8.decode(documentFile.content as List<int>, allowMalformed: true);
-    final bodyMatch = RegExp(r'<w:body[\s\S]*?</w:body>').firstMatch(xml);
-    final bodyXml = bodyMatch?.group(0) ?? xml;
-
-    final blocks = <String>[];
-    final blockMatches = RegExp(
-      r'<w:(p|tbl)\b[\s\S]*?</w:\1>',
-      multiLine: true,
-    ).allMatches(bodyXml);
-
-    for (final blockMatch in blockMatches) {
-      final blockXml = blockMatch.group(0) ?? '';
-      if (blockXml.startsWith('<w:tbl')) {
-        final tableText = _extractDocxTableText(blockXml);
-        if (tableText.trim().isNotEmpty) {
-          blocks.add(tableText);
-        }
-      } else {
-        final paragraphText = _extractDocxParagraphText(blockXml);
-        if (paragraphText.trim().isNotEmpty) {
-          blocks.add(paragraphText);
-        } else if (blocks.isNotEmpty && blocks.last.isNotEmpty) {
-          blocks.add('');
-        }
-      }
-    }
-
-    final text = _cleanExtractedDocxText(blocks.join('\n'));
-    if (text.trim().isEmpty) {
-      throw Exception('لم يتم استخراج نص من ملف DOCX.');
-    }
-    return text;
-  }
-
-  static String _extractDocxTableText(String tableXml) {
-    final rows = <String>[];
-    final rowMatches = RegExp(
-      r'<w:tr\b[\s\S]*?</w:tr>',
-      multiLine: true,
-    ).allMatches(tableXml);
-
-    for (final rowMatch in rowMatches) {
-      final rowXml = rowMatch.group(0) ?? '';
-      final cells = <String>[];
-      final cellMatches = RegExp(
-        r'<w:tc\b[\s\S]*?</w:tc>',
-        multiLine: true,
-      ).allMatches(rowXml);
-
-      for (final cellMatch in cellMatches) {
-        final cellXml = cellMatch.group(0) ?? '';
-        final paragraphs = RegExp(
-          r'<w:p\b[\s\S]*?</w:p>',
-          multiLine: true,
-        ).allMatches(cellXml).map((match) {
-          return _extractDocxParagraphText(match.group(0) ?? '');
-        }).where((value) => value.trim().isNotEmpty).toList();
-
-        final cellText = paragraphs.join(' ').trim();
-        if (cellText.isNotEmpty) {
-          cells.add(cellText);
-        }
-      }
-
-      if (cells.isNotEmpty) {
-        rows.add(cells.join('     '));
-      }
-    }
-
-    return rows.join('\n');
-  }
-
-  static String _extractDocxParagraphText(String paragraphXml) {
-    final preparedXml = paragraphXml
-        .replaceAll(RegExp(r'<w:tab\s*/>'), '     ')
-        .replaceAll(RegExp(r'<w:br\s*/>'), '\n')
-        .replaceAll(RegExp(r'<w:cr\s*/>'), '\n');
-
-    final textMatches = RegExp(
-      r'<w:t(?:\s[^>]*)?>([\s\S]*?)</w:t>',
-      multiLine: true,
-    ).allMatches(preparedXml);
-
-    final buffer = StringBuffer();
-    for (final textMatch in textMatches) {
-      buffer.write(_decodeXmlText(textMatch.group(1) ?? ''));
-    }
-    return buffer.toString().trimRight();
-  }
-
-  static String _cleanExtractedDocxText(String value) {
-    return value
-        .replaceAll(RegExp(r'[\u0000-\u0008\u000B\u000C\u000E-\u001F]'), '')
-        .replaceAll(RegExp(r'[\uE000-\uF8FF\uFFFC]'), '')
-        .replaceAll(RegExp(r'\n{3,}'), '\n\n')
-        .split('\n')
-        .map((line) => line.replaceAll(RegExp(r'[ \t]{2,}'), '     ').trimRight())
-        .join('\n')
-        .trim();
-  }
-
-  static String _decodeXmlText(String value) {
-    return value
-        .replaceAll('&lt;', '<')
-        .replaceAll('&gt;', '>')
-        .replaceAll('&amp;', '&')
-        .replaceAll('&quot;', '"')
-        .replaceAll('&apos;', "'");
-  }
-
   static bool _hasUnfilledPlaceholders(String text) {
     return RegExp(r'\{\{[^}]+\}\}').hasMatch(text);
   }
@@ -453,4 +437,18 @@ class PdfExporter {
         .replaceAll(RegExp(r'^_|_$'), '');
     return normalized.isEmpty ? 'IDARA_DZ' : normalized;
   }
+}
+
+class _ParsedEditorLine {
+  const _ParsedEditorLine({
+    required this.text,
+    required this.align,
+    required this.bold,
+    required this.isTitle,
+  });
+
+  final String text;
+  final pw.TextAlign align;
+  final bool bold;
+  final bool isTitle;
 }
