@@ -20,8 +20,8 @@ class DashboardPage extends StatelessWidget {
         child: CustomScrollView(
           slivers: [
             const SliverToBoxAdapter(child: _HomeHeader()),
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(18, 18, 18, 8),
+            const SliverPadding(
+              padding: EdgeInsets.fromLTRB(18, 18, 18, 8),
               sliver: SliverToBoxAdapter(
                 child: _SectionTitle(
                   title: 'الأقسام الرئيسية',
@@ -170,10 +170,10 @@ class _HomeHeader extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 18),
-          Wrap(
+          const Wrap(
             spacing: 8,
             runSpacing: 8,
-            children: const [
+            children: [
               _HeaderPill(text: 'Android'),
               _HeaderPill(text: 'PDF فقط'),
               _HeaderPill(text: 'GitHub Actions'),
@@ -326,7 +326,7 @@ class _QuickOverview extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final isWide = constraints.maxWidth > 650;
-        final cards = const [
+        const cards = [
           _OverviewCard(
             icon: Icons.description_outlined,
             value: '4',
