@@ -14,13 +14,13 @@ class AboutPage extends StatelessWidget {
         title: 'حول البرنامج',
         subtitle: 'معلومات IDARA DZ',
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(18),
+      body: const Padding(
+        padding: EdgeInsets.all(18),
         child: AppCard(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
-            children: const [
+            children: [
               Text('IDARA DZ', style: TextStyle(fontSize: 26, fontWeight: FontWeight.w900)),
               SizedBox(height: 10),
               Text(
