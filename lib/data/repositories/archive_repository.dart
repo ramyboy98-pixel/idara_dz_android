@@ -7,4 +7,19 @@ class ArchiveRepository {
     final rows = await db.query('archive_items', orderBy: 'id DESC');
     return rows.map(ArchiveItem.fromMap).toList();
   }
+
+  Future<int> addPdfItem({
+    required String title,
+    required String filePath,
+    String? customerName,
+  }) async {
+    final db = await DatabaseHelper.instance.database;
+    return db.insert('archive_items', {
+      'title': title,
+      'type': 'PDF',
+      'file_path': filePath,
+      'customer_name': customerName,
+      'created_at': DateTime.now().toIso8601String(),
+    });
+  }
 }
