@@ -35,6 +35,9 @@ jobs:
       - name: Create Android platform files if missing
         run: flutter create . --platforms=android --org com.idaradz
 
+      - name: Remove default Flutter test file
+        run: rm -rf test
+
       - name: Get packages
         run: flutter pub get
 
