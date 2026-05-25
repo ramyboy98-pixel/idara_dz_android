@@ -188,7 +188,6 @@ class PdfExporter {
     required Map<String, String> fields,
   }) async {
     final pdf = pw.Document();
-    final now = DateFormat('yyyy/MM/dd - HH:mm').format(DateTime.now());
     final theme = await _buildArabicPdfTheme();
 
     pdf.addPage(
