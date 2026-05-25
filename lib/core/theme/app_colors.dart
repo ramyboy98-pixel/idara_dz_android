@@ -11,5 +11,6 @@ class AppColors {
   static const Color red = Color(0xFFDC2626);
   static const Color sidebar = Color(0xFF111827);
   static const Color grayButton = Color(0xFFF3F4F6);
+  static const Color lightGray = Color(0xFFF3F4F6);
   static const Color warning = Color(0xFFF59E0B);
 }
