@@ -67,7 +67,7 @@ class PdfExporter {
     for (final entry in valuesByLabel.entries) {
       final normalizedLabel = normalizePlaceholderKey(entry.key);
       output = output.replaceAll('{{${entry.key}}}', entry.value);
-      output = output.replaceAll('{{${normalizedLabel}}}', entry.value);
+      output = output.replaceAll('{{$normalizedLabel}}', entry.value);
     }
 
     return output;
