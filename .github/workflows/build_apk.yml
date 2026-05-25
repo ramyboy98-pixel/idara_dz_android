@@ -32,6 +32,9 @@ jobs:
       - name: Show Flutter version
         run: flutter --version
 
+      - name: Create Android platform files if missing
+        run: flutter create . --platforms=android --org com.idaradz
+
       - name: Get packages
         run: flutter pub get
 
