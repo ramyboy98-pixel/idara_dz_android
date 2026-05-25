@@ -9,12 +9,12 @@ class AboutPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: const AppTopbar(
+    return const Scaffold(
+      appBar: AppTopbar(
         title: 'حول البرنامج',
         subtitle: 'معلومات IDARA DZ',
       ),
-      body: const Padding(
+      body: Padding(
         padding: EdgeInsets.all(18),
         child: AppCard(
           child: Column(
