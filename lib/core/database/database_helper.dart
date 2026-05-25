@@ -78,17 +78,20 @@ class DatabaseHelper {
   Future<void> _seed(Database db) async {
     final now = DateTime.now().toIso8601String();
 
-    await db.insert('document_categories', {
-      'name': 'طلب خطي',
-      'icon': '📄',
-      'created_at': now,
-    });
+    final categories = [
+      {'name': 'طلب خطي', 'icon': '📄'},
+      {'name': 'تصريح شرفي', 'icon': '📝'},
+      {'name': 'سيرة ذاتية', 'icon': '👤'},
+      {'name': 'فاتورة', 'icon': '🧾'},
+    ];
 
-    await db.insert('document_categories', {
-      'name': 'تصريحات',
-      'icon': '📝',
-      'created_at': now,
-    });
+    for (final category in categories) {
+      await db.insert('document_categories', {
+        'name': category['name'],
+        'icon': category['icon'],
+        'created_at': now,
+      });
+    }
 
     await db.insert('service_links', {
       'title': 'بريد الجزائر',
