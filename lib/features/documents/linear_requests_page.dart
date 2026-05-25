@@ -6,6 +6,7 @@ import '../../data/repositories/custom_templates_repository.dart';
 import '../../widgets/app_search_field.dart';
 import '../../widgets/app_topbar.dart';
 import 'add_linear_request_template_page.dart';
+import 'fill_custom_template_page.dart';
 
 class LinearRequestsPage extends StatefulWidget {
   const LinearRequestsPage({super.key});
@@ -93,7 +94,7 @@ class _LinearRequestsPageState extends State<LinearRequestsPage> {
                             final template = filteredTemplates[index];
                             return _SavedTemplateCard(
                               template: template,
-                              onTap: () => _showUseTemplateMessage(template),
+                              onTap: () => _openFillTemplatePage(template),
                               onDelete: () => _deleteTemplate(template),
                             );
                           },
@@ -123,8 +124,18 @@ class _LinearRequestsPageState extends State<LinearRequestsPage> {
     }
   }
 
-  void _showUseTemplateMessage(CustomDocumentTemplate template) {
-    _showMessage('المرحلة القادمة: فتح استمارة "${template.title}" وملؤها ثم توليد PDF.');
+  Future<void> _openFillTemplatePage(CustomDocumentTemplate template) async {
+    final id = template.id;
+    if (id == null) {
+      _showMessage('لا يمكن فتح هذا النموذج لأنه غير محفوظ بشكل صحيح.');
+      return;
+    }
+
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => FillCustomTemplatePage(template: template),
+      ),
+    );
   }
 
   Future<void> _deleteTemplate(CustomDocumentTemplate template) async {
