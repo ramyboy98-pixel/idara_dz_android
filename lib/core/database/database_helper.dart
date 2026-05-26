@@ -18,7 +18,7 @@ class DatabaseHelper {
     final path = join(dbPath, 'idara_dz.db');
     return openDatabase(
       path,
-      version: 2,
+      version: 3,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -54,6 +54,17 @@ class DatabaseHelper {
         key_name TEXT NOT NULL,
         field_type TEXT NOT NULL DEFAULT 'text',
         sort_order INTEGER NOT NULL DEFAULT 0
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE template_field_positions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        template_id INTEGER NOT NULL,
+        field_id INTEGER NOT NULL,
+        x REAL NOT NULL DEFAULT 0.5,
+        y REAL NOT NULL DEFAULT 0.5,
+        font_size REAL NOT NULL DEFAULT 12
       )
     ''');
 
@@ -96,6 +107,19 @@ class DatabaseHelper {
         columnName: 'template_file_path',
         sql: 'ALTER TABLE document_templates ADD COLUMN template_file_path TEXT',
       );
+    }
+
+    if (oldVersion < 3) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS template_field_positions (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          template_id INTEGER NOT NULL,
+          field_id INTEGER NOT NULL,
+          x REAL NOT NULL DEFAULT 0.5,
+          y REAL NOT NULL DEFAULT 0.5,
+          font_size REAL NOT NULL DEFAULT 12
+        )
+      ''');
     }
   }
 
