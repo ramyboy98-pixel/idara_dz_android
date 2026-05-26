@@ -26,14 +26,13 @@ class _FillCustomTemplatePageState extends State<FillCustomTemplatePage> {
   final ArchiveRepository _archiveRepository = ArchiveRepository();
   final Map<int, TextEditingController> _controllers = {};
   final Map<int, String> _fieldValues = {};
-  late Future<List<TemplateField>> _fieldsFuture;
+  late Future<_FillTemplateData> _dataFuture;
   bool _isExporting = false;
 
   @override
   void initState() {
     super.initState();
-    final templateId = widget.template.id ?? 0;
-    _fieldsFuture = _templatesRepository.getFields(templateId);
+    _dataFuture = _loadData();
   }
 
   @override
@@ -44,18 +43,26 @@ class _FillCustomTemplatePageState extends State<FillCustomTemplatePage> {
     super.dispose();
   }
 
+  Future<_FillTemplateData> _loadData() async {
+    final templateId = widget.template.id ?? 0;
+    final fields = await _templatesRepository.getFields(templateId);
+    final positions = await _templatesRepository.getFieldPositions(templateId);
+    return _FillTemplateData(fields: fields, positionsCount: positions.length);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppTopbar(
         title: widget.template.title,
-        subtitle: 'املأ استمارة المعلومات ليتم استعمالها في رموز النموذج',
+        subtitle: 'املأ الاستمارة وسيتم وضع البيانات فوق صورة النموذج',
       ),
       body: SafeArea(
-        child: FutureBuilder<List<TemplateField>>(
-          future: _fieldsFuture,
+        child: FutureBuilder<_FillTemplateData>(
+          future: _dataFuture,
           builder: (context, snapshot) {
-            final fields = snapshot.data ?? [];
+            final data = snapshot.data;
+            final fields = data?.fields ?? [];
 
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const Center(child: CircularProgressIndicator());
@@ -80,7 +87,7 @@ class _FillCustomTemplatePageState extends State<FillCustomTemplatePage> {
                   ),
                   const SizedBox(height: 10),
                   const Text(
-                    'ملاحظة: الاستبدال يعمل الآن مع ملفات TXT و MD التي تحتوي رموزًا مثل {{الاسم_واللقب}}. إذا كان الملف PDF أو DOCX سيصدر التطبيق نسخة PDF منظمة من بيانات الاستمارة كحل مؤقت.',
+                    'سيتم وضع البيانات فوق صورة النموذج في الأماكن التي حددتها عند إضافة النموذج، ثم يحفظ التطبيق PDF في الأرشيف.',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: AppColors.muted,
@@ -198,19 +205,25 @@ class _FillCustomTemplatePageState extends State<FillCustomTemplatePage> {
 
     try {
       final valuesByLabel = <String, String>{};
-      final valuesByKey = <String, String>{};
       for (final field in fields) {
         final fieldId = field.id ?? field.sortOrder;
         final value = _controllers[fieldId]?.text.trim() ?? '';
         valuesByLabel[field.label] = value;
-        valuesByKey[field.keyName] = value;
       }
 
-      final filePath = await PdfExporter.exportTemplateDocument(
+      final positions = await _templatesRepository.getFieldPositions(widget.template.id ?? 0);
+      final valuesByFieldId = <int, String>{};
+      for (final field in fields) {
+        final fieldId = field.id ?? field.sortOrder;
+        valuesByFieldId[fieldId] = _controllers[fieldId]?.text.trim() ?? '';
+      }
+
+      final filePath = await PdfExporter.exportImageTemplateDocument(
         title: widget.template.title,
         templateFilePath: widget.template.templateFilePath,
-        valuesByKey: valuesByKey,
-        valuesByLabel: valuesByLabel,
+        fields: fields,
+        positions: positions,
+        valuesByFieldId: valuesByFieldId,
       );
 
       await _archiveRepository.addPdfItem(
@@ -253,6 +266,13 @@ class _FillCustomTemplatePageState extends State<FillCustomTemplatePage> {
     }
     return null;
   }
+}
+
+class _FillTemplateData {
+  const _FillTemplateData({required this.fields, required this.positionsCount});
+
+  final List<TemplateField> fields;
+  final int positionsCount;
 }
 
 class _TemplateInfoCard extends StatelessWidget {
@@ -346,7 +366,7 @@ class _PlaceholderInfoCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'رموز هذا النموذج',
+            'حقول هذا النموذج',
             style: TextStyle(
               color: AppColors.text,
               fontWeight: FontWeight.w900,
@@ -354,7 +374,7 @@ class _PlaceholderInfoCard extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           const Text(
-            'هذه الرموز هي الأماكن التي يتعرف عليها التطبيق داخل ملف النموذج ويستبدلها بالقيم عند إنشاء PDF.',
+            'سيتم وضع قيم هذه الحقول فوق صورة النموذج حسب الأماكن التي حددتها عند إضافة النموذج.',
             style: TextStyle(color: AppColors.muted, height: 1.5),
           ),
           const SizedBox(height: 10),
@@ -365,7 +385,7 @@ class _PlaceholderInfoCard extends StatelessWidget {
               spacing: 8,
               runSpacing: 8,
               children: fields
-                  .map((field) => _SmallPlaceholderChip(text: '{{${field.keyName}}}'))
+                  .map((field) => _SmallPlaceholderChip(text: field.label))
                   .toList(),
             ),
         ],

@@ -2,9 +2,11 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_colors.dart';
+import '../../data/models/custom_document_template.dart';
 import '../../data/repositories/custom_templates_repository.dart';
 import '../../widgets/app_button.dart';
 import '../../widgets/app_topbar.dart';
+import 'place_template_fields_page.dart';
 
 class AddLinearRequestTemplatePage extends StatefulWidget {
   const AddLinearRequestTemplatePage({super.key});
@@ -39,7 +41,7 @@ class _AddLinearRequestTemplatePageState extends State<AddLinearRequestTemplateP
     return Scaffold(
       appBar: const AppTopbar(
         title: 'إضافة نموذج طلب خطي',
-        subtitle: 'ارفع النموذج وأنشئ استمارة المعلومات الخاصة به',
+        subtitle: 'استعمل صورة النموذج كخلفية ثم حدد أماكن الحقول فوقها',
       ),
       body: SafeArea(
         child: Form(
@@ -48,8 +50,6 @@ class _AddLinearRequestTemplatePageState extends State<AddLinearRequestTemplateP
             padding: const EdgeInsets.fromLTRB(18, 18, 18, 28),
             children: [
               const _InfoCard(),
-              const SizedBox(height: 12),
-              const _PlaceholderGuideCard(),
               const SizedBox(height: 16),
               _SectionCard(
                 title: 'معلومات النموذج',
@@ -59,7 +59,7 @@ class _AddLinearRequestTemplatePageState extends State<AddLinearRequestTemplateP
                       controller: _titleController,
                       decoration: const InputDecoration(
                         labelText: 'اسم النموذج',
-                        hintText: 'مثال: طلب توظيف في مؤسسة',
+                        hintText: 'مثال: طلب تركيب عداد كهربائي',
                       ),
                       validator: (value) {
                         if (value == null || value.trim().isEmpty) {
@@ -75,13 +75,13 @@ class _AddLinearRequestTemplatePageState extends State<AddLinearRequestTemplateP
                       maxLines: 4,
                       decoration: const InputDecoration(
                         labelText: 'وصف مختصر',
-                        hintText: 'اكتب ملاحظة تساعدك على تمييز هذا النموذج',
+                        hintText: 'ملاحظة تساعدك على تمييز هذا النموذج',
                       ),
                     ),
                     const SizedBox(height: 14),
                     _TemplateFileBox(
                       fileName: _templateName,
-                      onPick: _pickTemplateFile,
+                      onPick: _pickTemplateImage,
                     ),
                   ],
                 ),
@@ -93,7 +93,7 @@ class _AddLinearRequestTemplatePageState extends State<AddLinearRequestTemplateP
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     const Text(
-                      'أضف الحقول التي سيملؤها المستخدم لاحقًا. لكل حقل سيظهر رمز خاص؛ ضع نفس الرمز داخل ملف النموذج في المكان الذي تريد أن تُملأ فيه المعلومة.',
+                      'أضف الحقول التي سيملؤها المستخدم لاحقًا. بعد حفظ النموذج ستظهر صفحة تحديد الأماكن، تختار الحقل ثم تضغط على مكانه فوق صورة النموذج.',
                       style: TextStyle(
                         color: AppColors.muted,
                         fontSize: 13,
@@ -122,9 +122,9 @@ class _AddLinearRequestTemplatePageState extends State<AddLinearRequestTemplateP
               ),
               const SizedBox(height: 18),
               AppButton(
-                label: _saving ? 'جار الحفظ...' : 'حفظ النموذج',
+                label: _saving ? 'جار الحفظ...' : 'حفظ النموذج وتحديد الأماكن',
                 icon: Icons.save_rounded,
-                onPressed: _saving ? () {} : _saveTemplate,
+                onPressed: _saving ? null : _saveTemplate,
               ),
             ],
           ),
@@ -133,10 +133,10 @@ class _AddLinearRequestTemplatePageState extends State<AddLinearRequestTemplateP
     );
   }
 
-  Future<void> _pickTemplateFile() async {
+  Future<void> _pickTemplateImage() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: ['txt', 'md', 'pdf', 'doc', 'docx'],
+      allowedExtensions: ['png', 'jpg', 'jpeg', 'webp'],
       allowMultiple: false,
     );
 
@@ -167,7 +167,7 @@ class _AddLinearRequestTemplatePageState extends State<AddLinearRequestTemplateP
     if (!isValid) return;
 
     if (_templatePath == null) {
-      _showMessage('اختر ملف النموذج من الهاتف (الأفضل الآن TXT أو MD) أولًا.');
+      _showMessage('اختر صورة النموذج من الهاتف أولًا.');
       return;
     }
 
@@ -186,13 +186,25 @@ class _AddLinearRequestTemplatePageState extends State<AddLinearRequestTemplateP
 
     setState(() => _saving = true);
     try {
-      await _repository.addTemplateWithFields(
+      final templateId = await _repository.addTemplateWithFields(
         categoryName: 'طلب خطي',
         title: _titleController.text.trim(),
         description: _descriptionController.text.trim(),
         templateFilePath: _templatePath,
         fields: fields,
       );
+
+      final template = await _repository.getTemplate(templateId);
+      if (!mounted) return;
+
+      if (template != null) {
+        await Navigator.of(context).push<bool>(
+          MaterialPageRoute<bool>(
+            builder: (_) => PlaceTemplateFieldsPage(template: template),
+          ),
+        );
+      }
+
       if (!mounted) return;
       Navigator.of(context).pop(true);
     } catch (_) {
@@ -238,14 +250,14 @@ class _InfoCard extends StatelessWidget {
       child: const Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('🧩', style: TextStyle(fontSize: 32)),
+          Text('🖼️', style: TextStyle(fontSize: 32)),
           SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'بناء نموذج قابل للتعبئة',
+                  'النموذج كصورة ثابتة',
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 20,
@@ -254,63 +266,13 @@ class _InfoCard extends StatelessWidget {
                 ),
                 SizedBox(height: 8),
                 Text(
-                  'اكتب داخل ملف النموذج رموزًا مثل {{الاسم_واللقب}} في أماكن المعلومات. حاليًا يتم استبدال الرموز مباشرة في ملفات TXT و MD ثم تصديرها PDF. ملفات PDF و DOCX تُحفظ كمرجع وسنضيف دعمها الكامل لاحقًا.',
+                  'ارفع صورة واضحة للنموذج، ثم حدد أماكن المعلومات فوق الصورة مرة واحدة. بعد ذلك سيضع التطبيق بيانات الاستمارة فوق نفس الأماكن ويصدر PDF بنفس شكل النموذج.',
                   style: TextStyle(
                     color: Color(0xFFD1D5DB),
                     height: 1.6,
                   ),
                 ),
               ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-
-class _PlaceholderGuideCard extends StatelessWidget {
-  const _PlaceholderGuideCard();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFFEFF6FF),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: const Color(0xFFBFDBFE)),
-      ),
-      child: const Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.auto_fix_high_rounded, color: AppColors.blue),
-              SizedBox(width: 8),
-              Text(
-                'كيف يعرف التطبيق أماكن ملء المعلومات؟',
-                style: TextStyle(
-                  color: AppColors.text,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ],
-          ),
-          SizedBox(height: 10),
-          Text(
-            'داخل ملف النموذج النصي TXT أو MD تضع رموزًا بين قوسين مزدوجين. مثال: {{الاسم_واللقب}} أو {{تاريخ_الطلب}}. عند ملء الاستمارة، سيبحث التطبيق عن هذه الرموز ويستبدلها تلقائيًا بالمعلومات.',
-            style: TextStyle(color: AppColors.muted, height: 1.6),
-          ),
-          SizedBox(height: 10),
-          Text(
-            'مثال داخل النموذج: أنا الممضي أسفله {{الاسم_واللقب}} الساكن بـ {{العنوان}} أتقدم إلى سيادتكم بهذا الطلب.',
-            style: TextStyle(
-              color: AppColors.text,
-              height: 1.6,
-              fontWeight: FontWeight.w700,
             ),
           ),
         ],
@@ -331,18 +293,18 @@ class _SectionCard extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(24),
         border: Border.all(color: AppColors.border),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.04),
-            blurRadius: 16,
+            blurRadius: 18,
             offset: const Offset(0, 8),
           ),
         ],
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             title,
@@ -368,35 +330,32 @@ class _TemplateFileBox extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final hasFile = fileName != null;
     return InkWell(
       borderRadius: BorderRadius.circular(18),
       onTap: onPick,
-      child: Container(
+      child: Ink(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: hasFile ? const Color(0xFFEFF6FF) : AppColors.lightGray,
+          color: const Color(0xFFEFF6FF),
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: hasFile ? AppColors.blue : AppColors.border,
-          ),
+          border: Border.all(color: const Color(0xFFBFDBFE)),
         ),
         child: Row(
           children: [
-            Icon(
-              hasFile ? Icons.check_circle_rounded : Icons.upload_file_rounded,
-              color: hasFile ? AppColors.blue : AppColors.muted,
-            ),
+            const Icon(Icons.image_rounded, color: AppColors.blue),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
-                hasFile ? fileName! : 'اختر ملف النموذج من الهاتف (الأفضل الآن TXT أو MD)',
-                style: TextStyle(
-                  color: hasFile ? AppColors.text : AppColors.muted,
+                fileName == null ? 'اختر صورة النموذج PNG / JPG / WEBP' : fileName!,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: AppColors.text,
                   fontWeight: FontWeight.w800,
                 ),
               ),
             ),
+            const Icon(Icons.upload_file_rounded, color: AppColors.blue),
           ],
         ),
       ),
@@ -414,50 +373,11 @@ class _NoFieldsBox extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppColors.lightGray,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: AppColors.border),
       ),
       child: const Text(
-        'لا توجد حقول بعد. اضغط "إضافة حقل جديد" لإنشاء استمارة المعلومات.',
+        'لم تضف أي حقل بعد. أضف مثلًا: الاسم واللقب، العنوان، رقم الهاتف، التاريخ.',
+        textAlign: TextAlign.center,
         style: TextStyle(color: AppColors.muted, height: 1.5),
-      ),
-    );
-  }
-}
-
-
-class _PlaceholderPreview extends StatelessWidget {
-  const _PlaceholderPreview({required this.placeholder});
-
-  final String placeholder;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'الرمز الذي يجب وضعه داخل النموذج:',
-            style: TextStyle(color: AppColors.muted, fontSize: 12),
-          ),
-          const SizedBox(height: 4),
-          SelectableText(
-            placeholder,
-            textDirection: TextDirection.ltr,
-            style: const TextStyle(
-              color: AppColors.blue,
-              fontSize: 15,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -480,38 +400,12 @@ class _FieldEditor extends StatefulWidget {
 
 class _FieldEditorState extends State<_FieldEditor> {
   @override
-  void initState() {
-    super.initState();
-    widget.field.labelController.addListener(_onLabelChanged);
-  }
-
-  @override
-  void dispose() {
-    widget.field.labelController.removeListener(_onLabelChanged);
-    super.dispose();
-  }
-
-  void _onLabelChanged() {
-    if (mounted) setState(() {});
-  }
-
-  String _placeholderFor(String label) {
-    final normalized = label
-        .trim()
-        .toLowerCase()
-        .replaceAll(RegExp(r'\s+'), '_')
-        .replaceAll(RegExp(r'[^\u0600-\u06FFa-z0-9_]'), '');
-    final key = normalized.isEmpty ? 'field_${widget.index + 1}' : normalized;
-    return '{{$key}}';
-  }
-
-  @override
   Widget build(BuildContext context) {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFFFAFAFA),
+        color: AppColors.lightGray,
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: AppColors.border),
       ),
@@ -519,18 +413,27 @@ class _FieldEditorState extends State<_FieldEditor> {
         children: [
           Row(
             children: [
-              Text(
-                'حقل ${widget.index + 1}',
-                style: const TextStyle(fontWeight: FontWeight.w900),
+              CircleAvatar(
+                radius: 15,
+                backgroundColor: AppColors.blue,
+                foregroundColor: Colors.white,
+                child: Text('${widget.index + 1}'),
               ),
-              const Spacer(),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text(
+                  'حقل في الاستمارة',
+                  style: TextStyle(fontWeight: FontWeight.w900),
+                ),
+              ),
               IconButton(
                 onPressed: widget.onDelete,
-                icon: const Icon(Icons.delete_outline_rounded),
+                icon: const Icon(Icons.close_rounded),
                 color: AppColors.red,
               ),
             ],
           ),
+          const SizedBox(height: 8),
           TextFormField(
             controller: widget.field.labelController,
             decoration: const InputDecoration(
@@ -539,8 +442,6 @@ class _FieldEditorState extends State<_FieldEditor> {
             ),
           ),
           const SizedBox(height: 8),
-          _PlaceholderPreview(placeholder: _placeholderFor(widget.field.labelController.text)),
-          const SizedBox(height: 10),
           DropdownButtonFormField<String>(
             value: widget.field.fieldType,
             decoration: const InputDecoration(labelText: 'نوع الحقل'),

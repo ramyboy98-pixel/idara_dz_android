@@ -7,6 +7,7 @@ import '../../widgets/app_search_field.dart';
 import '../../widgets/app_topbar.dart';
 import 'add_linear_request_template_page.dart';
 import 'fill_custom_template_page.dart';
+import 'place_template_fields_page.dart';
 
 class LinearRequestsPage extends StatefulWidget {
   const LinearRequestsPage({super.key});
@@ -95,6 +96,7 @@ class _LinearRequestsPageState extends State<LinearRequestsPage> {
                             return _SavedTemplateCard(
                               template: template,
                               onTap: () => _openFillTemplatePage(template),
+                              onPlace: () => _openPlaceFieldsPage(template),
                               onDelete: () => _deleteTemplate(template),
                             );
                           },
@@ -134,6 +136,20 @@ class _LinearRequestsPageState extends State<LinearRequestsPage> {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => FillCustomTemplatePage(template: template),
+      ),
+    );
+  }
+
+  Future<void> _openPlaceFieldsPage(CustomDocumentTemplate template) async {
+    final id = template.id;
+    if (id == null) {
+      _showMessage('لا يمكن تعديل أماكن هذا النموذج لأنه غير محفوظ بشكل صحيح.');
+      return;
+    }
+
+    await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (_) => PlaceTemplateFieldsPage(template: template),
       ),
     );
   }
@@ -217,7 +233,7 @@ class _LinearRequestsHero extends StatelessWidget {
           ),
           SizedBox(height: 10),
           Text(
-            'هذه الصفحة لا تحتوي على نماذج ثابتة. أضف النموذج من الهاتف، وضع داخله رموز الحقول مثل {{الاسم}}، ثم أنشئ استمارة معلوماته وسيظهر هنا لاستعماله لاحقًا.',
+            'هذه الصفحة لا تحتوي على نماذج ثابتة. أضف صورة النموذج، ثم أنشئ حقول الاستمارة وحدد أماكن ظهورها فوق الصورة مرة واحدة.',
             style: TextStyle(
               color: Color(0xFFD1D5DB),
               fontSize: 14,
@@ -234,11 +250,13 @@ class _SavedTemplateCard extends StatefulWidget {
   const _SavedTemplateCard({
     required this.template,
     required this.onTap,
+    required this.onPlace,
     required this.onDelete,
   });
 
   final CustomDocumentTemplate template;
   final VoidCallback onTap;
+  final VoidCallback onPlace;
   final VoidCallback onDelete;
 
   @override
@@ -315,7 +333,7 @@ class _SavedTemplateCardState extends State<_SavedTemplateCard> {
                   const SizedBox(height: 10),
                   Text(
                     (template.description ?? '').isEmpty
-                        ? 'نموذج مضاف من الهاتف وجاهز لإعداد الاستمارة.'
+                        ? 'نموذج بصورة خلفية وجاهز للتعبئة.'
                         : template.description!,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
@@ -334,8 +352,14 @@ class _SavedTemplateCardState extends State<_SavedTemplateCard> {
                       ),
                       const SizedBox(width: 8),
                       _ChipLabel(
-                        icon: hasFile ? Icons.attach_file_rounded : Icons.error_outline_rounded,
-                        label: hasFile ? 'ملف محفوظ' : 'دون ملف',
+                        icon: hasFile ? Icons.image_rounded : Icons.error_outline_rounded,
+                        label: hasFile ? 'صورة محفوظة' : 'دون صورة',
+                      ),
+                      const Spacer(),
+                      TextButton.icon(
+                        onPressed: widget.onPlace,
+                        icon: const Icon(Icons.control_camera_rounded, size: 18),
+                        label: const Text('الأماكن'),
                       ),
                     ],
                   ),
