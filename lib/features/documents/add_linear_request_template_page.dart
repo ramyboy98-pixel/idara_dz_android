@@ -2,7 +2,6 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_colors.dart';
-import '../../data/models/custom_document_template.dart';
 import '../../data/repositories/custom_templates_repository.dart';
 import '../../widgets/app_button.dart';
 import '../../widgets/app_topbar.dart';
