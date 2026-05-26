@@ -80,7 +80,7 @@ class _FillCustomTemplatePageState extends State<FillCustomTemplatePage> {
                   ),
                   const SizedBox(height: 10),
                   const Text(
-                    'ملاحظة: يتم إنشاء PDF الآن من محرر القوالب الداخلي مع احترام إعدادات الصفحة والرموز. ملف Word/PDF المرفق يبقى مرجعًا فقط.',
+                    'ملاحظة: الاستبدال يعمل الآن مع ملفات TXT و MD التي تحتوي رموزًا مثل {{الاسم_واللقب}}. إذا كان الملف PDF أو DOCX سيصدر التطبيق نسخة PDF منظمة من بيانات الاستمارة كحل مؤقت.',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: AppColors.muted,
@@ -209,16 +209,6 @@ class _FillCustomTemplatePageState extends State<FillCustomTemplatePage> {
       final filePath = await PdfExporter.exportTemplateDocument(
         title: widget.template.title,
         templateFilePath: widget.template.templateFilePath,
-        editorContent: widget.template.editorContent,
-        pageSize: widget.template.pageSize,
-        orientation: widget.template.orientation,
-        marginTop: widget.template.marginTop,
-        marginRight: widget.template.marginRight,
-        marginBottom: widget.template.marginBottom,
-        marginLeft: widget.template.marginLeft,
-        textDirection: widget.template.textDirection,
-        baseFontSize: widget.template.baseFontSize,
-        lineSpacing: widget.template.lineSpacing,
         valuesByKey: valuesByKey,
         valuesByLabel: valuesByLabel,
       );
