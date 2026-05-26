@@ -16,7 +16,7 @@ jobs:
       - name: Checkout project
         uses: actions/checkout@v4
 
-      - name: Set up Java 17 without external action
+      - name: Set up Java 17 without setup-java action
         run: |
           echo "Checking Java installation..."
           if ! command -v java >/dev/null 2>&1; then
@@ -26,15 +26,16 @@ jobs:
           java -version
           echo "JAVA_HOME=${JAVA_HOME_17_X64:-/usr/lib/jvm/java-17-openjdk-amd64}" >> $GITHUB_ENV
 
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: "3.24.5"
-          channel: stable
-          cache: true
-
-      - name: Show Flutter version
-        run: flutter --version
+      - name: Install Flutter manually without flutter-action
+        run: |
+          set -e
+          FLUTTER_DIR="$HOME/flutter"
+          if [ ! -d "$FLUTTER_DIR" ]; then
+            git clone https://github.com/flutter/flutter.git "$FLUTTER_DIR" --depth 1 --branch 3.24.5
+          fi
+          echo "$FLUTTER_DIR/bin" >> $GITHUB_PATH
+          "$FLUTTER_DIR/bin/flutter" config --no-analytics
+          "$FLUTTER_DIR/bin/flutter" --version
 
       - name: Create Android platform files if missing
         run: |
