@@ -364,7 +364,6 @@ class PdfExporter {
               crossAxisAlignment: pw.CrossAxisAlignment.stretch,
               children: [
                 pw.Row(
-                  textDirection: pw.TextDirection.ltr,
                   crossAxisAlignment: pw.CrossAxisAlignment.start,
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   children: [
