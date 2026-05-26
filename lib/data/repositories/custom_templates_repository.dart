@@ -1,7 +1,7 @@
-
 import '../../core/database/database_helper.dart';
 import '../models/custom_document_template.dart';
 import '../models/template_field.dart';
+import '../models/template_field_position.dart';
 
 class CustomTemplatesRepository {
   const CustomTemplatesRepository();
@@ -42,17 +42,43 @@ class CustomTemplatesRepository {
 
       for (var i = 0; i < fields.length; i++) {
         final field = fields[i];
-        await txn.insert('template_fields', {
+        final fieldId = await txn.insert('template_fields', {
           'template_id': templateId,
           'label': field.label,
           'key_name': _makeKeyName(field.label, i),
           'field_type': field.fieldType,
           'sort_order': i,
         });
+
+        await txn.insert('template_field_positions', {
+          'template_id': templateId,
+          'field_id': fieldId,
+          'x': 0.78,
+          'y': 0.16 + (i * 0.055),
+          'font_size': 12,
+        });
       }
 
       return templateId;
     });
+  }
+
+  Future<CustomDocumentTemplate?> getTemplate(int templateId) async {
+    final db = await DatabaseHelper.instance.database;
+    final rows = await db.rawQuery(
+      '''
+      SELECT document_templates.*, COUNT(template_fields.id) AS fields_count
+      FROM document_templates
+      LEFT JOIN template_fields
+        ON template_fields.template_id = document_templates.id
+      WHERE document_templates.id = ?
+      GROUP BY document_templates.id
+      LIMIT 1
+      ''',
+      [templateId],
+    );
+    if (rows.isEmpty) return null;
+    return CustomDocumentTemplate.fromMap(rows.first);
   }
 
   Future<List<TemplateField>> getFields(int templateId) async {
@@ -66,9 +92,48 @@ class CustomTemplatesRepository {
     return rows.map(TemplateField.fromMap).toList();
   }
 
+  Future<List<TemplateFieldPosition>> getFieldPositions(int templateId) async {
+    final db = await DatabaseHelper.instance.database;
+    final rows = await db.query(
+      'template_field_positions',
+      where: 'template_id = ?',
+      whereArgs: [templateId],
+      orderBy: 'id ASC',
+    );
+    return rows.map(TemplateFieldPosition.fromMap).toList();
+  }
+
+  Future<void> saveFieldPositions({
+    required int templateId,
+    required List<TemplateFieldPosition> positions,
+  }) async {
+    final db = await DatabaseHelper.instance.database;
+    await db.transaction((txn) async {
+      await txn.delete(
+        'template_field_positions',
+        where: 'template_id = ?',
+        whereArgs: [templateId],
+      );
+      for (final position in positions) {
+        await txn.insert('template_field_positions', {
+          'template_id': templateId,
+          'field_id': position.fieldId,
+          'x': position.x.clamp(0.0, 1.0),
+          'y': position.y.clamp(0.0, 1.0),
+          'font_size': position.fontSize,
+        });
+      }
+    });
+  }
+
   Future<void> deleteTemplate(int templateId) async {
     final db = await DatabaseHelper.instance.database;
     await db.transaction((txn) async {
+      await txn.delete(
+        'template_field_positions',
+        where: 'template_id = ?',
+        whereArgs: [templateId],
+      );
       await txn.delete(
         'template_fields',
         where: 'template_id = ?',
