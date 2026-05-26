@@ -293,35 +293,68 @@ class PdfExporter {
   }) async {
     final pdf = pw.Document();
     final theme = await _buildArabicPdfTheme();
-    final fullName = '$lastName $firstName'.trim();
-    final address = [fullAddress, city]
-        .where((part) => part.trim().isNotEmpty)
-        .join(' - ');
+    final arabicFont = await _loadAndroidArabicFont();
+    final latinFont = await _loadAndroidLatinFont();
+    final fallbackFonts = <pw.Font>[
+      if (latinFont != null) latinFont,
+    ];
 
-    const normalStyle = pw.TextStyle(fontSize: 13.5, lineSpacing: 5);
-    final boldStyle = pw.TextStyle(fontSize: 13.5, fontWeight: pw.FontWeight.bold, lineSpacing: 5);
-    final subjectStyle = pw.TextStyle(fontSize: 14.5, fontWeight: pw.FontWeight.bold, lineSpacing: 5);
+    pw.TextStyle style(double size, {bool bold = false}) {
+      return pw.TextStyle(
+        font: arabicFont,
+        fontFallback: fallbackFonts,
+        fontSize: size,
+        fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
+        lineSpacing: 4.5,
+      );
+    }
 
-    pw.Widget paragraph(List<pw.InlineSpan> spans) {
+    final normalStyle = style(13.3);
+    final boldStyle = style(13.3, bold: true);
+    final subjectStyle = style(14.2, bold: true);
+
+    final cleanFirstName = _cleanPdfText(firstName);
+    final cleanLastName = _cleanPdfText(lastName);
+    final fullName = '$cleanLastName $cleanFirstName'.trim();
+    final address = _cleanPdfText(
+      [fullAddress, city]
+          .where((part) => part.trim().isNotEmpty)
+          .join(' - '),
+    );
+
+    final displayDate = _formatDateForDisplay(requestDate);
+    final cleanPhone = _cleanPdfText(phone);
+    final cleanNationalId = _cleanPdfText(nationalId);
+    final cleanRecipient = _cleanPdfText(recipient);
+    final cleanSubjectMatter = _cleanPdfText(subjectMatter);
+    final cleanExperienceYears = _cleanPdfText(experienceYears);
+    final cleanDegree = _cleanPdfText(degree);
+    final cleanSpecialization = _cleanPdfText(specialization);
+    final cleanUniversity = _cleanPdfText(university);
+    final cleanGraduationYear = _cleanPdfText(graduationYear);
+
+    pw.Widget line(String text, {pw.TextAlign align = pw.TextAlign.right, pw.TextStyle? textStyle, double bottom = 6}) {
       return pw.Padding(
-        padding: const pw.EdgeInsets.only(bottom: 9),
-        child: pw.RichText(
+        padding: pw.EdgeInsets.only(bottom: bottom),
+        child: pw.Text(
+          _cleanPdfText(text),
           textDirection: pw.TextDirection.rtl,
-          textAlign: pw.TextAlign.right,
-          text: pw.TextSpan(style: normalStyle, children: spans),
+          textAlign: align,
+          style: textStyle ?? normalStyle,
         ),
       );
     }
 
-    pw.TextSpan normal(String text) => pw.TextSpan(text: text);
-    pw.TextSpan strong(String text) => pw.TextSpan(text: text, style: boldStyle);
+    pw.Widget centered(String text, {pw.TextStyle? textStyle, double bottom = 10}) {
+      return line(text, align: pw.TextAlign.center, textStyle: textStyle ?? boldStyle, bottom: bottom);
+    }
 
     pdf.addPage(
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
         pageTheme: pw.PageTheme(
           textDirection: pw.TextDirection.rtl,
-          margin: const pw.EdgeInsets.fromLTRB(42, 46, 42, 42),
+          margin: const pw.EdgeInsets.fromLTRB(56, 68, 56, 42),
           theme: theme,
         ),
         build: (context) => [
@@ -330,58 +363,66 @@ class PdfExporter {
             child: pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.stretch,
               children: [
-                _fixedInfoLine(label: 'في:', value: requestDate, style: normalStyle, boldStyle: boldStyle),
-                _fixedInfoLine(label: 'الاسم واللقب:', value: fullName, style: normalStyle, boldStyle: boldStyle),
-                _fixedInfoLine(label: 'العنوان:', value: address, style: normalStyle, boldStyle: boldStyle),
-                _fixedInfoLine(label: 'الهاتف:', value: phone, style: normalStyle, boldStyle: boldStyle),
-                pw.SizedBox(height: 13),
-                _fixedInfoLine(label: 'إلى السيد:', value: recipient, style: normalStyle, boldStyle: boldStyle),
-                pw.SizedBox(height: 13),
-                pw.RichText(
-                  textDirection: pw.TextDirection.rtl,
-                  textAlign: pw.TextAlign.right,
-                  text: pw.TextSpan(
-                    style: subjectStyle,
-                    children: [
-                      const pw.TextSpan(text: 'الموضوع: طلب منصب استخلاف لمنصب أستاذ في مادة '),
-                      pw.TextSpan(text: subjectMatter, style: subjectStyle),
-                    ],
-                  ),
+                pw.Row(
+                  textDirection: pw.TextDirection.ltr,
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    pw.Container(
+                      width: 170,
+                      child: pw.Text(
+                        'في: $displayDate',
+                        textDirection: pw.TextDirection.rtl,
+                        textAlign: pw.TextAlign.right,
+                        style: normalStyle,
+                      ),
+                    ),
+                    pw.Container(
+                      width: 260,
+                      child: pw.Column(
+                        crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+                        children: [
+                          line('الاسم واللقب: $fullName', textStyle: boldStyle, bottom: 5),
+                          line('العنوان: $address', textStyle: boldStyle, bottom: 5),
+                          line('الهاتف: $cleanPhone', textStyle: boldStyle, bottom: 0),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-                pw.SizedBox(height: 18),
-                paragraph([
-                  normal('أنا الممضي أسفله الحامل لبطاقة التعريف الوطنية رقم: '),
-                  strong(nationalId),
-                  normal(' لي عظيم الشرف أن أتقدم إلى سيادتكم المحترمة بطلبي هذا والمتمثل في طلب الحصول على منصب استخلاف بصفة أستاذ في مادة '),
-                  strong(subjectMatter),
-                  normal('.'),
-                ]),
-                paragraph([
-                  normal('كما أحيطكم علماً أنني متحصل على شهادة '),
-                  strong(degree),
-                  normal(' تخصص '),
-                  strong(specialization),
-                  normal('، خريج سنة '),
-                  strong(graduationYear),
-                  normal(' من '),
-                  strong(university),
-                  normal('.'),
-                ]),
-                paragraph([
-                  normal('ولدي خبرة في مجال التدريس تقدر بـ ('),
-                  strong(experienceYears),
-                  normal(') سنوات، ولدي الرغبة والقدرة الكاملة على أداء هذه المهمة التربوية.'),
-                ]),
-                paragraph([
-                  normal('في انتظار ردكم الإيجابي، تقبلوا مني فائق الاحترام والتقدير.'),
-                ]),
-                pw.SizedBox(height: 34),
+                pw.SizedBox(height: 54),
+                centered('إلى السيد: $cleanRecipient', textStyle: boldStyle, bottom: 45),
+                centered(
+                  'الموضوع: طلب منصب استخلاف لمنصب أستاذ في مادة $cleanSubjectMatter',
+                  textStyle: subjectStyle,
+                  bottom: 45,
+                ),
+                line(
+                  'أنا الممضي أسفله الحامل لبطاقة التعريف الوطنية رقم: $cleanNationalId لي عظيم الشرف أن أتقدم إلى',
+                  bottom: 8,
+                ),
+                line(
+                  'سيادتكم المحترمة بطلبي هذا والمتمثل في طلب الحصول على منصب استخلاف بصفة أستاذ في مادة',
+                  bottom: 8,
+                ),
+                line('$cleanSubjectMatter.', bottom: 24),
+                line(
+                  'كما أحيطكم علماً أنني متحصل على شهادة $cleanDegree تخصص $cleanSpecialization، خريج سنة $cleanGraduationYear',
+                  bottom: 8,
+                ),
+                line('من $cleanUniversity.', bottom: 24),
+                line(
+                  'ولدي خبرة في مجال التدريس تقدر بـ ($cleanExperienceYears) سنوات، ولدي الرغبة والقدرة الكاملة على أداء هذه المهمة',
+                  bottom: 8,
+                ),
+                line('التربوية.', bottom: 54),
+                centered('في انتظار ردكم الإيجابي، تقبلوا مني فائق الاحترام والتقدير.', textStyle: normalStyle, bottom: 88),
                 pw.Align(
                   alignment: pw.Alignment.centerLeft,
                   child: pw.Text(
                     'توقيع المعني:',
                     textDirection: pw.TextDirection.rtl,
-                    style: boldStyle,
+                    style: normalStyle,
                   ),
                 ),
               ],
@@ -394,26 +435,21 @@ class PdfExporter {
     return pdf.save();
   }
 
-  static pw.Widget _fixedInfoLine({
-    required String label,
-    required String value,
-    required pw.TextStyle style,
-    required pw.TextStyle boldStyle,
-  }) {
-    return pw.Padding(
-      padding: const pw.EdgeInsets.only(bottom: 7),
-      child: pw.RichText(
-        textDirection: pw.TextDirection.rtl,
-        textAlign: pw.TextAlign.right,
-        text: pw.TextSpan(
-          style: style,
-          children: [
-            pw.TextSpan(text: '$label ', style: boldStyle),
-            pw.TextSpan(text: value.trim().isEmpty ? '........................' : value.trim()),
-          ],
-        ),
-      ),
-    );
+  static String _cleanPdfText(String value) {
+    return value
+        .replaceAll(RegExp(r'[\uFFFD\u25A1\u25A0\u200e\u200f\u202a-\u202e]'), '')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
+
+  static String _formatDateForDisplay(String value) {
+    final cleaned = _cleanPdfText(value);
+    if (cleaned.isEmpty) return '';
+    final parts = cleaned.split(RegExp(r'[\-/\\.]')).where((p) => p.trim().isNotEmpty).toList();
+    if (parts.length == 3 && parts.first.length == 4) {
+      return '${parts[2]}/${parts[1]}/${parts[0]}';
+    }
+    return cleaned;
   }
 
   static Future<Uint8List> _buildSimpleDocument({
@@ -493,6 +529,24 @@ class PdfExporter {
       '/system/fonts/NotoSansArabic-Regular.ttf',
       '/system/fonts/DroidNaskh-Regular.ttf',
       '/system/fonts/Roboto-Regular.ttf',
+    ];
+
+    for (final path in candidates) {
+      final file = File(path);
+      if (await file.exists()) {
+        final bytes = await file.readAsBytes();
+        return pw.Font.ttf(bytes.buffer.asByteData());
+      }
+    }
+
+    return null;
+  }
+
+  static Future<pw.Font?> _loadAndroidLatinFont() async {
+    final candidates = <String>[
+      '/system/fonts/Roboto-Regular.ttf',
+      '/system/fonts/NotoSans-Regular.ttf',
+      '/system/fonts/DroidSans.ttf',
     ];
 
     for (final path in candidates) {
