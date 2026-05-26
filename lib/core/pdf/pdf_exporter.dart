@@ -1,8 +1,6 @@
-import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:archive/archive.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:path/path.dart' as p;
@@ -39,24 +37,26 @@ class PdfExporter {
         return file.path;
       }
 
-      if (extension == '.docx') {
-        final templateText = await _extractTextFromDocx(templatePath);
-        final filledText = fillPlaceholders(
-          templateText: templateText,
-          valuesByKey: valuesByKey,
-          valuesByLabel: valuesByLabel,
-        );
-        final bytes = await _buildTextTemplateDocument(
-          filledText: filledText,
-        );
-        final file = await _savePdfFile(title: title, bytes: bytes);
-        return file.path;
-      }
     }
 
     final bytes = await _buildSimpleDocument(title: title, fields: valuesByLabel);
     final file = await _savePdfFile(title: title, bytes: bytes);
     return file.path;
+  }
+
+
+  static Future<String> exportImageTemplateDocument({
+    required String title,
+    required String? templateFilePath,
+    required Map<String, String> valuesByKey,
+    required Map<String, String> valuesByLabel,
+  }) async {
+    return exportTemplateDocument(
+      title: title,
+      templateFilePath: templateFilePath,
+      valuesByKey: valuesByKey,
+      valuesByLabel: valuesByLabel,
+    );
   }
 
   static Future<String> exportSimpleDocument({
@@ -276,7 +276,7 @@ class PdfExporter {
         .where((part) => part.trim().isNotEmpty)
         .join(' - ');
 
-    final normalStyle = const pw.TextStyle(fontSize: 13.5, lineSpacing: 5);
+    const normalStyle = pw.TextStyle(fontSize: 13.5, lineSpacing: 5);
     final boldStyle = pw.TextStyle(fontSize: 13.5, fontWeight: pw.FontWeight.bold, lineSpacing: 5);
     final subjectStyle = pw.TextStyle(fontSize: 14.5, fontWeight: pw.FontWeight.bold, lineSpacing: 5);
 
@@ -312,21 +312,21 @@ class PdfExporter {
                 _fixedInfoLine(label: 'الاسم واللقب:', value: fullName, style: normalStyle, boldStyle: boldStyle),
                 _fixedInfoLine(label: 'العنوان:', value: address, style: normalStyle, boldStyle: boldStyle),
                 _fixedInfoLine(label: 'الهاتف:', value: phone, style: normalStyle, boldStyle: boldStyle),
-                const pw.SizedBox(height: 13),
+                pw.SizedBox(height: 13),
                 _fixedInfoLine(label: 'إلى السيد:', value: recipient, style: normalStyle, boldStyle: boldStyle),
-                const pw.SizedBox(height: 13),
+                pw.SizedBox(height: 13),
                 pw.RichText(
                   textDirection: pw.TextDirection.rtl,
                   textAlign: pw.TextAlign.right,
                   text: pw.TextSpan(
                     style: subjectStyle,
                     children: [
-                      const pw.TextSpan(text: 'الموضوع: طلب منصب استخلاف لمنصب أستاذ في مادة '),
+                      pw.TextSpan(text: 'الموضوع: طلب منصب استخلاف لمنصب أستاذ في مادة '),
                       pw.TextSpan(text: subjectMatter, style: subjectStyle),
                     ],
                   ),
                 ),
-                const pw.SizedBox(height: 18),
+                pw.SizedBox(height: 18),
                 paragraph([
                   normal('أنا الممضي أسفله الحامل لبطاقة التعريف الوطنية رقم: '),
                   strong(nationalId),
@@ -353,7 +353,7 @@ class PdfExporter {
                 paragraph([
                   normal('في انتظار ردكم الإيجابي، تقبلوا مني فائق الاحترام والتقدير.'),
                 ]),
-                const pw.SizedBox(height: 34),
+                pw.SizedBox(height: 34),
                 pw.Align(
                   alignment: pw.Alignment.centerLeft,
                   child: pw.Text(
@@ -482,124 +482,6 @@ class PdfExporter {
     }
 
     return null;
-  }
-
-  static Future<String> _extractTextFromDocx(String filePath) async {
-    final bytes = await File(filePath).readAsBytes();
-    final archive = ZipDecoder().decodeBytes(bytes);
-    final documentFile = archive.files.firstWhere(
-      (file) => file.name == 'word/document.xml',
-      orElse: () => throw Exception('ملف DOCX غير صالح: لم يتم العثور على word/document.xml'),
-    );
-
-    final xml = utf8.decode(documentFile.content as List<int>, allowMalformed: true);
-    final bodyMatch = RegExp(r'<w:body[\s\S]*?</w:body>').firstMatch(xml);
-    final bodyXml = bodyMatch?.group(0) ?? xml;
-
-    final blocks = <String>[];
-    final blockMatches = RegExp(
-      r'<w:(p|tbl)\b[\s\S]*?</w:\1>',
-      multiLine: true,
-    ).allMatches(bodyXml);
-
-    for (final blockMatch in blockMatches) {
-      final blockXml = blockMatch.group(0) ?? '';
-      if (blockXml.startsWith('<w:tbl')) {
-        final tableText = _extractDocxTableText(blockXml);
-        if (tableText.trim().isNotEmpty) {
-          blocks.add(tableText);
-        }
-      } else {
-        final paragraphText = _extractDocxParagraphText(blockXml);
-        if (paragraphText.trim().isNotEmpty) {
-          blocks.add(paragraphText);
-        } else if (blocks.isNotEmpty && blocks.last.isNotEmpty) {
-          blocks.add('');
-        }
-      }
-    }
-
-    final text = _cleanExtractedDocxText(blocks.join('\n'));
-    if (text.trim().isEmpty) {
-      throw Exception('لم يتم استخراج نص من ملف DOCX.');
-    }
-    return text;
-  }
-
-  static String _extractDocxTableText(String tableXml) {
-    final rows = <String>[];
-    final rowMatches = RegExp(
-      r'<w:tr\b[\s\S]*?</w:tr>',
-      multiLine: true,
-    ).allMatches(tableXml);
-
-    for (final rowMatch in rowMatches) {
-      final rowXml = rowMatch.group(0) ?? '';
-      final cells = <String>[];
-      final cellMatches = RegExp(
-        r'<w:tc\b[\s\S]*?</w:tc>',
-        multiLine: true,
-      ).allMatches(rowXml);
-
-      for (final cellMatch in cellMatches) {
-        final cellXml = cellMatch.group(0) ?? '';
-        final paragraphs = RegExp(
-          r'<w:p\b[\s\S]*?</w:p>',
-          multiLine: true,
-        ).allMatches(cellXml).map((match) {
-          return _extractDocxParagraphText(match.group(0) ?? '');
-        }).where((value) => value.trim().isNotEmpty).toList();
-
-        final cellText = paragraphs.join(' ').trim();
-        if (cellText.isNotEmpty) {
-          cells.add(cellText);
-        }
-      }
-
-      if (cells.isNotEmpty) {
-        rows.add(cells.join('     '));
-      }
-    }
-
-    return rows.join('\n');
-  }
-
-  static String _extractDocxParagraphText(String paragraphXml) {
-    final preparedXml = paragraphXml
-        .replaceAll(RegExp(r'<w:tab\s*/>'), '     ')
-        .replaceAll(RegExp(r'<w:br\s*/>'), '\n')
-        .replaceAll(RegExp(r'<w:cr\s*/>'), '\n');
-
-    final textMatches = RegExp(
-      r'<w:t(?:\s[^>]*)?>([\s\S]*?)</w:t>',
-      multiLine: true,
-    ).allMatches(preparedXml);
-
-    final buffer = StringBuffer();
-    for (final textMatch in textMatches) {
-      buffer.write(_decodeXmlText(textMatch.group(1) ?? ''));
-    }
-    return buffer.toString().trimRight();
-  }
-
-  static String _cleanExtractedDocxText(String value) {
-    return value
-        .replaceAll(RegExp(r'[\u0000-\u0008\u000B\u000C\u000E-\u001F]'), '')
-        .replaceAll(RegExp(r'[\uE000-\uF8FF\uFFFC]'), '')
-        .replaceAll(RegExp(r'\n{3,}'), '\n\n')
-        .split('\n')
-        .map((line) => line.replaceAll(RegExp(r'[ \t]{2,}'), '     ').trimRight())
-        .join('\n')
-        .trim();
-  }
-
-  static String _decodeXmlText(String value) {
-    return value
-        .replaceAll('&lt;', '<')
-        .replaceAll('&gt;', '>')
-        .replaceAll('&amp;', '&')
-        .replaceAll('&quot;', '"')
-        .replaceAll('&apos;', "'");
   }
 
   static bool _hasUnfilledPlaceholders(String text) {
