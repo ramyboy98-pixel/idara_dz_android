@@ -1,13 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_colors.dart';
-import '../../data/models/custom_document_template.dart';
-import '../../data/repositories/custom_templates_repository.dart';
 import '../../widgets/app_search_field.dart';
 import '../../widgets/app_topbar.dart';
-import 'add_linear_request_template_page.dart';
-import 'fill_custom_template_page.dart';
-import 'place_template_fields_page.dart';
+import 'fixed_substitution_request_page.dart';
 
 class LinearRequestsPage extends StatefulWidget {
   const LinearRequestsPage({super.key});
@@ -17,181 +13,96 @@ class LinearRequestsPage extends StatefulWidget {
 }
 
 class _LinearRequestsPageState extends State<LinearRequestsPage> {
-  final CustomTemplatesRepository _repository = const CustomTemplatesRepository();
   String _query = '';
-  late Future<List<CustomDocumentTemplate>> _templatesFuture;
 
-  @override
-  void initState() {
-    super.initState();
-    _templatesFuture = _repository.getTemplates('طلب خطي');
-  }
-
-  void _refresh() {
-    setState(() {
-      _templatesFuture = _repository.getTemplates('طلب خطي');
-    });
-  }
+  final List<_FixedRequestTemplate> _templates = const [
+    _FixedRequestTemplate(
+      title: 'طلب منصب استخلاف',
+      subtitle: 'طلب خطي لمنصب أستاذ مستخلف حسب المادة والخبرة والشهادة.',
+      icon: '📄',
+      fieldsCount: 14,
+    ),
+  ];
 
   @override
   Widget build(BuildContext context) {
+    final query = _query.trim();
+    final filteredTemplates = _templates.where((template) {
+      if (query.isEmpty) return true;
+      return template.title.contains(query) || template.subtitle.contains(query);
+    }).toList();
+
     return Scaffold(
       appBar: const AppTopbar(
         title: 'طلب خطي',
-        subtitle: 'أضف نماذجك الخاصة واستعملها لاحقًا للتعبئة الآلية',
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _openAddTemplatePage,
-        backgroundColor: AppColors.blue,
-        foregroundColor: Colors.white,
-        icon: const Icon(Icons.add_rounded),
-        label: const Text('إضافة نموذج'),
+        subtitle: 'نماذج ثابتة مضبوطة داخل التطبيق',
       ),
       body: SafeArea(
-        child: FutureBuilder<List<CustomDocumentTemplate>>(
-          future: _templatesFuture,
-          builder: (context, snapshot) {
-            final templates = snapshot.data ?? [];
-            final filteredTemplates = templates.where((template) {
-              final query = _query.trim();
-              if (query.isEmpty) return true;
-              return template.title.contains(query) ||
-                  (template.description ?? '').contains(query);
-            }).toList();
-
-            return RefreshIndicator(
-              onRefresh: () async => _refresh(),
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(18, 18, 18, 96),
-                children: [
-                  const _LinearRequestsHero(),
-                  const SizedBox(height: 18),
-                  AppSearchField(
-                    hint: 'ابحث في النماذج المحفوظة...',
-                    onChanged: (value) => setState(() => _query = value),
-                  ),
-                  const SizedBox(height: 18),
-                  if (snapshot.connectionState == ConnectionState.waiting)
-                    const _LoadingBox()
-                  else if (templates.isEmpty)
-                    _EmptyTemplatesBox(onAdd: _openAddTemplatePage)
-                  else if (filteredTemplates.isEmpty)
-                    const _NoSearchResultsBox()
-                  else
-                    LayoutBuilder(
-                      builder: (context, constraints) {
-                        final isWide = constraints.maxWidth >= 720;
-                        return GridView.builder(
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          itemCount: filteredTemplates.length,
-                          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: isWide ? 2 : 1,
-                            mainAxisSpacing: 14,
-                            crossAxisSpacing: 14,
-                            mainAxisExtent: 172,
-                          ),
-                          itemBuilder: (context, index) {
-                            final template = filteredTemplates[index];
-                            return _SavedTemplateCard(
-                              template: template,
-                              onTap: () => _openFillTemplatePage(template),
-                              onPlace: () => _openPlaceFieldsPage(template),
-                              onDelete: () => _deleteTemplate(template),
-                            );
-                          },
-                        );
-                      },
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 28),
+          children: [
+            const _LinearRequestsHero(),
+            const SizedBox(height: 18),
+            AppSearchField(
+              hint: 'ابحث في نماذج الطلب الخطي...',
+              onChanged: (value) => setState(() => _query = value),
+            ),
+            const SizedBox(height: 18),
+            if (filteredTemplates.isEmpty)
+              const _NoSearchResultsBox()
+            else
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final isWide = constraints.maxWidth >= 720;
+                  return GridView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: filteredTemplates.length,
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: isWide ? 2 : 1,
+                      mainAxisSpacing: 14,
+                      crossAxisSpacing: 14,
+                      mainAxisExtent: 170,
                     ),
-                  const SizedBox(height: 18),
-                  const _WorkflowCard(),
-                ],
+                    itemBuilder: (context, index) {
+                      final template = filteredTemplates[index];
+                      return _FixedTemplateCard(
+                        template: template,
+                        onTap: () => _openTemplate(template),
+                      );
+                    },
+                  );
+                },
               ),
-            );
-          },
+            const SizedBox(height: 18),
+            const _WorkflowCard(),
+          ],
         ),
       ),
     );
   }
 
-  Future<void> _openAddTemplatePage() async {
-    final changed = await Navigator.of(context).push<bool>(
-      MaterialPageRoute<bool>(
-        builder: (_) => const AddLinearRequestTemplatePage(),
-      ),
-    );
-    if (changed == true) {
-      _refresh();
-      _showMessage('تم حفظ النموذج بنجاح.');
-    }
-  }
-
-  Future<void> _openFillTemplatePage(CustomDocumentTemplate template) async {
-    final id = template.id;
-    if (id == null) {
-      _showMessage('لا يمكن فتح هذا النموذج لأنه غير محفوظ بشكل صحيح.');
-      return;
-    }
-
-    await Navigator.of(context).push(
+  void _openTemplate(_FixedRequestTemplate template) {
+    Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => FillCustomTemplatePage(template: template),
+        builder: (_) => const FixedSubstitutionRequestPage(),
       ),
     );
   }
+}
 
-  Future<void> _openPlaceFieldsPage(CustomDocumentTemplate template) async {
-    final id = template.id;
-    if (id == null) {
-      _showMessage('لا يمكن تعديل أماكن هذا النموذج لأنه غير محفوظ بشكل صحيح.');
-      return;
-    }
+class _FixedRequestTemplate {
+  const _FixedRequestTemplate({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.fieldsCount,
+  });
 
-    await Navigator.of(context).push<bool>(
-      MaterialPageRoute<bool>(
-        builder: (_) => PlaceTemplateFieldsPage(template: template),
-      ),
-    );
-  }
-
-  Future<void> _deleteTemplate(CustomDocumentTemplate template) async {
-    final id = template.id;
-    if (id == null) return;
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('حذف النموذج'),
-        content: Text('هل تريد حذف "${template.title}" من صفحة طلب خطي؟'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('إلغاء'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('حذف'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed != true) return;
-    await _repository.deleteTemplate(id);
-    _refresh();
-    _showMessage('تم حذف النموذج.');
-  }
-
-  void _showMessage(String message) {
-    ScaffoldMessenger.of(context)
-      ..clearSnackBars()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(message),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-  }
+  final String title;
+  final String subtitle;
+  final String icon;
+  final int fieldsCount;
 }
 
 class _LinearRequestsHero extends StatelessWidget {
@@ -221,7 +132,7 @@ class _LinearRequestsHero extends StatelessWidget {
               SizedBox(width: 12),
               Expanded(
                 child: Text(
-                  'نماذج الطلب الخطي الخاصة بك',
+                  'نماذج الطلب الخطي',
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 22,
@@ -233,7 +144,7 @@ class _LinearRequestsHero extends StatelessWidget {
           ),
           SizedBox(height: 10),
           Text(
-            'هذه الصفحة لا تحتوي على نماذج ثابتة. أضف صورة النموذج، ثم أنشئ حقول الاستمارة وحدد أماكن ظهورها فوق الصورة مرة واحدة.',
+            'هذه الصفحة تعتمد الآن على نماذج ثابتة داخل التطبيق. كل نموذج له استمارة معلومات وتصدير PDF مضبوط من الكود مباشرة.',
             style: TextStyle(
               color: Color(0xFFD1D5DB),
               fontSize: 14,
@@ -246,126 +157,96 @@ class _LinearRequestsHero extends StatelessWidget {
   }
 }
 
-class _SavedTemplateCard extends StatefulWidget {
-  const _SavedTemplateCard({
-    required this.template,
-    required this.onTap,
-    required this.onPlace,
-    required this.onDelete,
-  });
+class _FixedTemplateCard extends StatefulWidget {
+  const _FixedTemplateCard({required this.template, required this.onTap});
 
-  final CustomDocumentTemplate template;
+  final _FixedRequestTemplate template;
   final VoidCallback onTap;
-  final VoidCallback onPlace;
-  final VoidCallback onDelete;
 
   @override
-  State<_SavedTemplateCard> createState() => _SavedTemplateCardState();
+  State<_FixedTemplateCard> createState() => _FixedTemplateCardState();
 }
 
-class _SavedTemplateCardState extends State<_SavedTemplateCard> {
+class _FixedTemplateCardState extends State<_FixedTemplateCard> {
   bool _pressed = false;
 
   @override
   Widget build(BuildContext context) {
-    final template = widget.template;
-    final hasFile = (template.templateFilePath ?? '').isNotEmpty;
-
-    return AnimatedScale(
-      scale: _pressed ? 0.985 : 1,
-      duration: const Duration(milliseconds: 110),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(24),
-          onTap: widget.onTap,
-          onHighlightChanged: (value) => setState(() => _pressed = value),
-          child: Ink(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: AppColors.border),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 18,
-                  offset: const Offset(0, 9),
-                ),
-              ],
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+    return GestureDetector(
+      onTapDown: (_) => setState(() => _pressed = true),
+      onTapCancel: () => setState(() => _pressed = false),
+      onTapUp: (_) => setState(() => _pressed = false),
+      onTap: widget.onTap,
+      child: AnimatedScale(
+        scale: _pressed ? 0.98 : 1,
+        duration: const Duration(milliseconds: 120),
+        child: Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: AppColors.border),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.04),
+                blurRadius: 18,
+                offset: const Offset(0, 10),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
                 children: [
-                  Row(
-                    children: [
-                      Container(
-                        width: 48,
-                        height: 48,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFEFF6FF),
-                          borderRadius: BorderRadius.circular(18),
-                        ),
-                        child: const Text('📄', style: TextStyle(fontSize: 25)),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          template.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: AppColors.text,
-                            fontSize: 17,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        onPressed: widget.onDelete,
-                        icon: const Icon(Icons.delete_outline_rounded),
-                        color: AppColors.red,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    (template.description ?? '').isEmpty
-                        ? 'نموذج بصورة خلفية وجاهز للتعبئة.'
-                        : template.description!,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: AppColors.muted,
-                      fontSize: 13,
-                      height: 1.5,
+                  Container(
+                    width: 52,
+                    height: 52,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEFF6FF),
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                    child: Center(
+                      child: Text(widget.template.icon, style: const TextStyle(fontSize: 26)),
                     ),
                   ),
-                  const Spacer(),
-                  Row(
-                    children: [
-                      _ChipLabel(
-                        icon: Icons.list_alt_rounded,
-                        label: '${template.fieldsCount} حقول',
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      widget.template.title,
+                      style: const TextStyle(
+                        color: AppColors.text,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
                       ),
-                      const SizedBox(width: 8),
-                      _ChipLabel(
-                        icon: hasFile ? Icons.image_rounded : Icons.error_outline_rounded,
-                        label: hasFile ? 'صورة محفوظة' : 'دون صورة',
-                      ),
-                      const Spacer(),
-                      TextButton.icon(
-                        onPressed: widget.onPlace,
-                        icon: const Icon(Icons.control_camera_rounded, size: 18),
-                        label: const Text('الأماكن'),
-                      ),
-                    ],
+                    ),
+                  ),
+                  const Icon(Icons.arrow_back_ios_new_rounded, color: AppColors.muted, size: 18),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                widget.template.subtitle,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: AppColors.muted, height: 1.5),
+              ),
+              const Spacer(),
+              Row(
+                children: [
+                  const Icon(Icons.fact_check_outlined, size: 17, color: AppColors.blue),
+                  const SizedBox(width: 6),
+                  Text(
+                    '${widget.template.fieldsCount} حقل معلومات',
+                    style: const TextStyle(
+                      color: AppColors.blue,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 12,
+                    ),
                   ),
                 ],
               ),
-            ),
+            ],
           ),
         ),
       ),
@@ -373,43 +254,8 @@ class _SavedTemplateCardState extends State<_SavedTemplateCard> {
   }
 }
 
-class _ChipLabel extends StatelessWidget {
-  const _ChipLabel({required this.icon, required this.label});
-
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-      decoration: BoxDecoration(
-        color: AppColors.lightGray,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 15, color: AppColors.muted),
-          const SizedBox(width: 5),
-          Text(
-            label,
-            style: const TextStyle(
-              color: AppColors.muted,
-              fontSize: 12,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _EmptyTemplatesBox extends StatelessWidget {
-  const _EmptyTemplatesBox({required this.onAdd});
-
-  final VoidCallback onAdd;
+class _NoSearchResultsBox extends StatelessWidget {
+  const _NoSearchResultsBox();
 
   @override
   Widget build(BuildContext context) {
@@ -420,32 +266,17 @@ class _EmptyTemplatesBox extends StatelessWidget {
         borderRadius: BorderRadius.circular(24),
         border: Border.all(color: AppColors.border),
       ),
-      child: Column(
+      child: const Column(
         children: [
-          const Text('📂', style: TextStyle(fontSize: 44)),
-          const SizedBox(height: 10),
-          const Text(
-            'لا توجد نماذج طلب خطي بعد',
+          Text('🔎', style: TextStyle(fontSize: 44)),
+          SizedBox(height: 10),
+          Text(
+            'لا يوجد نموذج بهذا الاسم.',
             style: TextStyle(
               color: AppColors.text,
-              fontSize: 18,
+              fontSize: 16,
               fontWeight: FontWeight.w900,
             ),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'اضغط على إضافة نموذج، اختر ملف النموذج من الهاتف، ثم أنشئ استمارة المعلومات الخاصة به.',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: AppColors.muted,
-              height: 1.6,
-            ),
-          ),
-          const SizedBox(height: 14),
-          FilledButton.icon(
-            onPressed: onAdd,
-            icon: const Icon(Icons.add_rounded),
-            label: const Text('إضافة نموذج الآن'),
           ),
         ],
       ),
@@ -461,65 +292,22 @@ class _WorkflowCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFFEFF6FF),
+        color: const Color(0xFFF0FDF4),
         borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: const Color(0xFFBFDBFE)),
+        border: Border.all(color: const Color(0xFFBBF7D0)),
       ),
-      child: const Column(
+      child: const Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'طريقة العمل النهائية',
-            style: TextStyle(
-              color: AppColors.text,
-              fontSize: 16,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          SizedBox(height: 8),
-          Text(
-            'إعداد ملف النموذج وفيه رموز مثل {{الاسم_واللقب}} ← إضافة النموذج من الهاتف ← إعداد استمارة المعلومات بنفس الحقول ← حفظ النموذج ← ملء الاستمارة لاحقًا ← استبدال الرموز وتوليد PDF وأرشفته.',
-            style: TextStyle(
-              color: AppColors.muted,
-              height: 1.6,
+          Icon(Icons.verified_rounded, color: AppColors.green),
+          SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'المسار الجديد: اختيار نموذج ثابت، ملء الاستمارة، إنشاء PDF، ثم حفظه أو مشاركته من الهاتف.',
+              style: TextStyle(color: AppColors.text, height: 1.5),
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _LoadingBox extends StatelessWidget {
-  const _LoadingBox();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Center(
-      child: Padding(
-        padding: EdgeInsets.all(24),
-        child: CircularProgressIndicator(),
-      ),
-    );
-  }
-}
-
-class _NoSearchResultsBox extends StatelessWidget {
-  const _NoSearchResultsBox();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: const Text(
-        'لا توجد نتائج مطابقة للبحث.',
-        textAlign: TextAlign.center,
-        style: TextStyle(color: AppColors.muted),
       ),
     );
   }
