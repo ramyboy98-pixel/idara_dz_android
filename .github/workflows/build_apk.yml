@@ -58,7 +58,7 @@ jobs:
         run: flutter pub get
 
       - name: Analyze project
-        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+        run: flutter analyze
 
       - name: Build release APK
         run: flutter build apk --release
