@@ -60,7 +60,10 @@ class PdfExporter {
     if (fields != null && valuesByFieldId != null) {
       for (final field in fields) {
         try {
-          final int fieldId = (field.id as int?) ?? (field.sortOrder as int?);
+          final int? fieldId = (field.id as int?) ?? (field.sortOrder as int?);
+          if (fieldId == null) {
+            continue;
+          }
           final String value = valuesByFieldId[fieldId] ?? '';
           labels[field.label as String] = value;
           keys[field.keyName as String] = value;
@@ -340,7 +343,7 @@ class PdfExporter {
                   text: pw.TextSpan(
                     style: subjectStyle,
                     children: [
-                      pw.TextSpan(text: 'الموضوع: طلب منصب استخلاف لمنصب أستاذ في مادة '),
+                      const pw.TextSpan(text: 'الموضوع: طلب منصب استخلاف لمنصب أستاذ في مادة '),
                       pw.TextSpan(text: subjectMatter, style: subjectStyle),
                     ],
                   ),
