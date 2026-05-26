@@ -47,15 +47,34 @@ class PdfExporter {
 
   static Future<String> exportImageTemplateDocument({
     required String title,
-    required String? templateFilePath,
-    required Map<String, String> valuesByKey,
-    required Map<String, String> valuesByLabel,
+    String? templateFilePath,
+    Map<String, String>? valuesByKey,
+    Map<String, String>? valuesByLabel,
+    List<dynamic>? fields,
+    List<dynamic>? positions,
+    Map<int, String>? valuesByFieldId,
   }) async {
+    final labels = Map<String, String>.from(valuesByLabel ?? <String, String>{});
+    final keys = Map<String, String>.from(valuesByKey ?? <String, String>{});
+
+    if (fields != null && valuesByFieldId != null) {
+      for (final field in fields) {
+        try {
+          final int fieldId = (field.id as int?) ?? (field.sortOrder as int?);
+          final String value = valuesByFieldId[fieldId] ?? '';
+          labels[field.label as String] = value;
+          keys[field.keyName as String] = value;
+        } catch (_) {
+          // Keep this method compatible with older template experiments.
+        }
+      }
+    }
+
     return exportTemplateDocument(
       title: title,
       templateFilePath: templateFilePath,
-      valuesByKey: valuesByKey,
-      valuesByLabel: valuesByLabel,
+      valuesByKey: keys,
+      valuesByLabel: labels,
     );
   }
 
