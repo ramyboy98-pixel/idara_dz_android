@@ -5,7 +5,6 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.pdf.PdfDocument
 import android.os.Build
-import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.View
@@ -55,8 +54,16 @@ class MainActivity : FlutterActivity() {
         Handler(Looper.getMainLooper()).post {
             var webView: WebView? = null
             try {
-                val pageWidthPx = 1240
-                val pageHeightPx = 1754
+                // HTML is laid out as a fixed A4 page in CSS pixels.
+                // The PDF page itself is real A4 points: 595 x 842.
+                // We render the WebView to a scaled canvas so the whole page fits,
+                // instead of capturing a zoomed or cropped portion of the document.
+                val contentWidthPx = 794
+                val contentHeightPx = 1123
+                val pdfWidthPt = 595
+                val pdfHeightPt = 842
+                val scaleX = pdfWidthPt.toFloat() / contentWidthPx.toFloat()
+                val scaleY = pdfHeightPt.toFloat() / contentHeightPx.toFloat()
 
                 webView = WebView(this)
                 val view = webView!!
@@ -71,11 +78,8 @@ class MainActivity : FlutterActivity() {
                 view.isHorizontalScrollBarEnabled = false
                 view.visibility = View.VISIBLE
 
-                // The WebView must be attached to the real window. If it is not attached,
-                // Android often produces a valid but blank PDF. We place it outside the
-                // visible screen, render it, then remove it immediately.
-                val params = FrameLayout.LayoutParams(pageWidthPx, pageHeightPx)
-                params.leftMargin = -pageWidthPx - 100
+                val params = FrameLayout.LayoutParams(contentWidthPx, contentHeightPx)
+                params.leftMargin = -contentWidthPx - 200
                 params.topMargin = 0
                 addContentView(view, params)
 
@@ -98,18 +102,21 @@ class MainActivity : FlutterActivity() {
                 fun renderToPdf() {
                     try {
                         view.measure(
-                            View.MeasureSpec.makeMeasureSpec(pageWidthPx, View.MeasureSpec.EXACTLY),
-                            View.MeasureSpec.makeMeasureSpec(pageHeightPx, View.MeasureSpec.EXACTLY)
+                            View.MeasureSpec.makeMeasureSpec(contentWidthPx, View.MeasureSpec.EXACTLY),
+                            View.MeasureSpec.makeMeasureSpec(contentHeightPx, View.MeasureSpec.EXACTLY)
                         )
-                        view.layout(0, 0, pageWidthPx, pageHeightPx)
+                        view.layout(0, 0, contentWidthPx, contentHeightPx)
 
                         val document = PdfDocument()
                         try {
-                            val pageInfo = PdfDocument.PageInfo.Builder(pageWidthPx, pageHeightPx, 1).create()
+                            val pageInfo = PdfDocument.PageInfo.Builder(pdfWidthPt, pdfHeightPt, 1).create()
                             val page = document.startPage(pageInfo)
                             val canvas: Canvas = page.canvas
                             canvas.drawColor(Color.WHITE)
+                            canvas.save()
+                            canvas.scale(scaleX, scaleY)
                             view.draw(canvas)
+                            canvas.restore()
                             document.finishPage(page)
 
                             val outputFile = File(filePath)
@@ -130,14 +137,13 @@ class MainActivity : FlutterActivity() {
 
                 view.webViewClient = object : WebViewClient() {
                     override fun onPageFinished(finishedView: WebView, url: String?) {
-                        // Give WebView time to finish layout, fonts, and painting.
                         finishedView.postDelayed({
                             try {
                                 finishedView.measure(
-                                    View.MeasureSpec.makeMeasureSpec(pageWidthPx, View.MeasureSpec.EXACTLY),
-                                    View.MeasureSpec.makeMeasureSpec(pageHeightPx, View.MeasureSpec.EXACTLY)
+                                    View.MeasureSpec.makeMeasureSpec(contentWidthPx, View.MeasureSpec.EXACTLY),
+                                    View.MeasureSpec.makeMeasureSpec(contentHeightPx, View.MeasureSpec.EXACTLY)
                                 )
-                                finishedView.layout(0, 0, pageWidthPx, pageHeightPx)
+                                finishedView.layout(0, 0, contentWidthPx, contentHeightPx)
                                 finishedView.invalidate()
 
                                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -155,7 +161,7 @@ class MainActivity : FlutterActivity() {
                             } catch (e: Exception) {
                                 fail("PDF_PREPARE_ERROR", e.message)
                             }
-                        }, 900)
+                        }, 800)
                     }
                 }
 
