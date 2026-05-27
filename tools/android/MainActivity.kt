@@ -26,7 +26,8 @@ class MainActivity : FlutterActivity() {
             when (call.method) {
                 "createPdfFromHtml", "htmlToPdf", "exportHtmlToPdf" -> {
                     val html = call.argument<String>("html") ?: ""
-                    val filePath = call.argument<String>("filePath")
+                    val filePath = call.argument<String>("outputPath")
+                        ?: call.argument<String>("filePath")
                         ?: call.argument<String>("path")
                         ?: ""
 
