@@ -360,20 +360,22 @@ class PdfExporter {
     return pw.Positioned(
       left: left,
       top: top,
-      width: width,
-      child: pw.Directionality(
-        textDirection: pw.TextDirection.rtl,
-        child: pw.Text(
+      child: pw.SizedBox(
+        width: width,
+        child: pw.Directionality(
+          textDirection: pw.TextDirection.rtl,
+          child: pw.Text(
           text.trim(),
           maxLines: 2,
           softWrap: true,
           overflow: pw.TextOverflow.clip,
           textAlign: align,
           textDirection: pw.TextDirection.rtl,
-          style: pw.TextStyle(
-            fontSize: fontSize,
-            fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
-            lineSpacing: 2,
+            style: pw.TextStyle(
+              fontSize: fontSize,
+              fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
+              lineSpacing: 2,
+            ),
           ),
         ),
       ),
@@ -389,27 +391,6 @@ class PdfExporter {
         .trim();
   }
 
-  static pw.Widget _fixedInfoLine({
-    required String label,
-    required String value,
-    required pw.TextStyle style,
-    required pw.TextStyle boldStyle,
-  }) {
-    return pw.Padding(
-      padding: const pw.EdgeInsets.only(bottom: 7),
-      child: pw.RichText(
-        textDirection: pw.TextDirection.rtl,
-        textAlign: pw.TextAlign.right,
-        text: pw.TextSpan(
-          style: style,
-          children: [
-            pw.TextSpan(text: '$label ', style: boldStyle),
-            pw.TextSpan(text: value.trim().isEmpty ? '........................' : value.trim()),
-          ],
-        ),
-      ),
-    );
-  }
 
   static Future<Uint8List> _buildSimpleDocument({
     required String title,
