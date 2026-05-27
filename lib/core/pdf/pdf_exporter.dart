@@ -125,7 +125,8 @@ class PdfExporter {
     if (fields != null && valuesByFieldId != null) {
       for (final field in fields) {
         try {
-          final int? fieldId = field.id is int ? field.id as int : field.sortOrder as int?;
+          final dynamic rawId = field.id ?? field.sortOrder;
+          final int? fieldId = rawId is int ? rawId : null;
           if (fieldId == null) continue;
           final value = valuesByFieldId[fieldId] ?? '';
           labels[field.label as String] = value;
@@ -263,43 +264,41 @@ class PdfExporter {
     required String university,
     required String graduationYear,
   }) {
-    final fullName = _cleanText('$lastName $firstName');
+    final fullName = _joinClean([lastName, firstName], separator: ' ');
     final address = _joinClean([fullAddress, city], separator: ' - ');
     final matter = _cleanText(subjectMatter);
-    final years = _cleanText(experienceYears);
 
     return _wrapA4Html('''
       <section class="substitution-page">
         <header class="top-block">
-          <div class="date-block">في: <span>${_escapeHtml(_cleanText(requestDate))}</span></div>
+          <div class="date-block"><span class="label">في:</span> <span class="ltr">${_escapeHtml(_cleanText(requestDate))}</span></div>
           <div class="person-block">
-            <div>الاسم واللقب: <span>${_escapeHtml(fullName)}</span></div>
-            <div>العنوان: <span>${_escapeHtml(address)}</span></div>
-            <div>الهاتف: <span dir="ltr">${_escapeHtml(_cleanText(phone))}</span></div>
+            <div><span class="label">الاسم واللقب:</span> <span>${_escapeHtml(fullName)}</span></div>
+            <div><span class="label">العنوان:</span> <span>${_escapeHtml(address)}</span></div>
+            <div><span class="label">الهاتف:</span> <span class="ltr">${_escapeHtml(_cleanText(phone))}</span></div>
           </div>
         </header>
 
         <main class="substitution-content">
-          <p class="recipient">إلى السيد: <strong>${_escapeHtml(_cleanText(recipient))}</strong></p>
+          <p class="recipient">إلى السيد: <span>${_escapeHtml(_cleanText(recipient))}</span></p>
 
-          <p class="subject">الموضوع: <strong>طلب منصب استخلاف لمنصب أستاذ في مادة ${_escapeHtml(matter)}</strong></p>
+          <p class="subject">الموضوع: طلب منصب استخلاف لمنصب أستاذ في مادة ${_escapeHtml(matter)}</p>
 
           <p>
             أنا الممضي أسفله الحامل لبطاقة التعريف الوطنية رقم:
-            <span dir="ltr">${_escapeHtml(_cleanText(nationalId))}</span>
+            <span class="ltr">${_escapeHtml(_cleanText(nationalId))}</span>
             لي عظيم الشرف أن أتقدم إلى سيادتكم المحترمة بطلبي هذا والمتمثل في طلب الحصول على منصب استخلاف بصفة أستاذ في مادة ${_escapeHtml(matter)}.
           </p>
 
           <p>
             كما أحيطكم علماً أنني متحصل على شهادة ${_escapeHtml(_cleanText(degree))}
             تخصص ${_escapeHtml(_cleanText(specialization))}، خريج سنة
-            <span dir="ltr">${_escapeHtml(_cleanText(graduationYear))}</span>
+            <span class="ltr">${_escapeHtml(_cleanText(graduationYear))}</span>
             من ${_escapeHtml(_cleanText(university))}.
           </p>
 
           <p>
-            ولدي خبرة في مجال التدريس تقدر بـ (<span dir="ltr">${_escapeHtml(years)}</span>) سنوات،
-            ولدي الرغبة والقدرة الكاملة على أداء هذه المهمة التربوية.
+            ولدي خبرة في مجال التدريس تقدر بـ (<span class="ltr">${_escapeHtml(_cleanText(experienceYears))}</span>) سنوات، ولدي الرغبة والقدرة الكاملة على أداء هذه المهمة التربوية.
           </p>
 
           <p class="closing">في انتظار ردكم الإيجابي، تقبلوا مني فائق الاحترام والتقدير.</p>
@@ -316,97 +315,118 @@ class PdfExporter {
 <html lang="ar" dir="rtl">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=794, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <style>
-    @page { size: A4 portrait; margin: 0; }
     * { box-sizing: border-box; }
     html, body {
       margin: 0;
       padding: 0;
+      width: 794px;
+      min-width: 794px;
+      height: 1123px;
+      min-height: 1123px;
+      overflow: hidden;
       background: #ffffff;
       color: #111111;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
     }
     body {
-      width: 210mm;
-      min-height: 297mm;
-      font-family: Arial, Tahoma, sans-serif;
+      font-family: Tahoma, Arial, sans-serif;
       direction: rtl;
+      font-size: 18px;
     }
     .substitution-page {
-      width: 210mm;
-      min-height: 297mm;
-      padding: 32mm 24mm 22mm 24mm;
+      width: 794px;
+      height: 1123px;
       position: relative;
+      padding: 76px 70px 70px 70px;
       direction: rtl;
-      font-size: 20px;
-      line-height: 1.85;
+      overflow: hidden;
+      background: #fff;
     }
     .top-block {
-      display: flex;
-      flex-direction: row-reverse;
-      justify-content: space-between;
-      align-items: flex-start;
-      margin-bottom: 36mm;
-    }
-    .person-block {
-      width: 48%;
-      text-align: right;
-      line-height: 1.7;
-      white-space: normal;
+      position: relative;
+      height: 150px;
+      width: 100%;
+      margin-bottom: 18px;
     }
     .date-block {
-      width: 40%;
-      text-align: left;
-      line-height: 1.7;
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 240px;
+      text-align: right;
       direction: rtl;
+      font-size: 18px;
+      line-height: 1.45;
+      white-space: nowrap;
+    }
+    .person-block {
+      position: absolute;
+      right: 0;
+      top: 0;
+      width: 350px;
+      text-align: right;
+      direction: rtl;
+      font-size: 18px;
+      line-height: 1.7;
+    }
+    .label { font-weight: 400; }
+    .ltr {
+      direction: ltr;
+      unicode-bidi: isolate;
+      display: inline-block;
+      text-align: left;
     }
     .substitution-content {
       width: 100%;
-      font-size: 21px;
-      line-height: 2.05;
+      direction: rtl;
+      font-size: 18px;
+      line-height: 1.9;
       text-align: right;
     }
     .substitution-content p {
-      margin: 0 0 11mm 0;
-      text-align: justify;
-      text-align-last: right;
+      margin: 0 0 23px 0;
       direction: rtl;
       unicode-bidi: plaintext;
+      text-align: justify;
+      text-align-last: right;
     }
     .recipient {
       text-align: center !important;
       text-align-last: center !important;
-      font-weight: 500;
-      margin-bottom: 18mm !important;
+      margin-bottom: 42px !important;
+      font-size: 18px;
     }
     .subject {
       text-align: center !important;
       text-align-last: center !important;
-      margin-bottom: 16mm !important;
+      margin-bottom: 42px !important;
+      font-size: 18px;
     }
     .closing {
       text-align: center !important;
       text-align-last: center !important;
-      margin-top: 6mm !important;
+      margin-top: 8px !important;
     }
     .signature {
       position: absolute;
-      left: 24mm;
-      bottom: 42mm;
-      font-size: 20px;
+      left: 70px;
+      bottom: 96px;
+      font-size: 18px;
       direction: rtl;
+      text-align: right;
     }
     .simple-title {
-      width: 210mm;
-      padding: 28mm 22mm 8mm;
+      width: 794px;
+      padding: 90px 70px 25px;
       font-size: 26px;
       font-weight: 700;
       text-align: center;
     }
     .simple-table {
-      width: 166mm;
+      width: 650px;
       margin: 0 auto;
       border-collapse: collapse;
       direction: rtl;
@@ -420,9 +440,9 @@ class PdfExporter {
     }
     .simple-table th { width: 38%; background: #f4f4f4; }
     .text-template {
-      width: 166mm;
+      width: 650px;
       margin: 0 auto;
-      font-size: 20px;
+      font-size: 18px;
       line-height: 1.9;
       white-space: pre-wrap;
       direction: rtl;
