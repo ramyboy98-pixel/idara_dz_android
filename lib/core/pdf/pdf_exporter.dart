@@ -1,158 +1,16 @@
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/services.dart' show rootBundle;
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
-import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pw;
 import 'package:share_plus/share_plus.dart';
 
 class PdfExporter {
   const PdfExporter._();
 
-  static Future<String> exportTemplateDocument({
-    required String title,
-    required String? templateFilePath,
-    required Map<String, String> valuesByKey,
-    required Map<String, String> valuesByLabel,
-  }) async {
-    final templatePath = templateFilePath?.trim() ?? '';
-
-    if (templatePath.isNotEmpty && await File(templatePath).exists()) {
-      final extension = p.extension(templatePath).toLowerCase();
-
-      if (extension == '.txt' || extension == '.md') {
-        final templateText = await File(templatePath).readAsString();
-        final filledText = fillPlaceholders(
-          templateText: templateText,
-          valuesByKey: valuesByKey,
-          valuesByLabel: valuesByLabel,
-        );
-        final bytes = await _buildTextTemplateDocument(
-          filledText: filledText,
-        );
-        final file = await _savePdfFile(title: title, bytes: bytes);
-        return file.path;
-      }
-
-    }
-
-    final bytes = await _buildSimpleDocument(title: title, fields: valuesByLabel);
-    final file = await _savePdfFile(title: title, bytes: bytes);
-    return file.path;
-  }
-
-
-  static Future<String> exportImageTemplateDocument({
-    required String title,
-    String? templateFilePath,
-    Map<String, String>? valuesByKey,
-    Map<String, String>? valuesByLabel,
-    List<dynamic>? fields,
-    List<dynamic>? positions,
-    Map<int, String>? valuesByFieldId,
-  }) async {
-    final labels = Map<String, String>.from(valuesByLabel ?? <String, String>{});
-    final keys = Map<String, String>.from(valuesByKey ?? <String, String>{});
-
-    if (fields != null && valuesByFieldId != null) {
-      for (final field in fields) {
-        try {
-          final int? fieldId = (field.id as int?) ?? (field.sortOrder as int?);
-          if (fieldId == null) {
-            continue;
-          }
-          final String value = valuesByFieldId[fieldId] ?? '';
-          labels[field.label as String] = value;
-          keys[field.keyName as String] = value;
-        } catch (_) {
-          // Keep this method compatible with older template experiments.
-        }
-      }
-    }
-
-    return exportTemplateDocument(
-      title: title,
-      templateFilePath: templateFilePath,
-      valuesByKey: keys,
-      valuesByLabel: labels,
-    );
-  }
-
-  static Future<String> exportSimpleDocument({
-    required String title,
-    required Map<String, String> fields,
-  }) async {
-    final bytes = await _buildSimpleDocument(title: title, fields: fields);
-    final file = await _savePdfFile(title: title, bytes: bytes);
-    return file.path;
-  }
-
-  static String fillPlaceholders({
-    required String templateText,
-    required Map<String, String> valuesByKey,
-    required Map<String, String> valuesByLabel,
-  }) {
-    final replacements = <String, String>{};
-
-    void addReplacement(String rawKey, String value) {
-      final key = rawKey.trim();
-      if (key.isEmpty) return;
-
-      replacements[key] = value;
-      replacements[normalizePlaceholderKey(key)] = value;
-      replacements[_compactPlaceholderKey(key)] = value;
-    }
-
-    for (final entry in valuesByKey.entries) {
-      addReplacement(entry.key, entry.value);
-    }
-
-    for (final entry in valuesByLabel.entries) {
-      addReplacement(entry.key, entry.value);
-    }
-
-    return templateText.replaceAllMapped(
-      RegExp(r'\{\{([\s\S]*?)\}\}'),
-      (match) {
-        final rawPlaceholder = match.group(1) ?? '';
-        final candidates = <String>[
-          rawPlaceholder.trim(),
-          normalizePlaceholderKey(rawPlaceholder),
-          _compactPlaceholderKey(rawPlaceholder),
-        ];
-
-        for (final candidate in candidates) {
-          final value = replacements[candidate];
-          if (value != null) return value;
-        }
-
-        // Unknown placeholders should not appear as broken squares in the final PDF.
-        return '';
-      },
-    );
-  }
-
-  static String normalizePlaceholderKey(String text) {
-    return text
-        .replaceAll(RegExp(r'[\u200e\u200f\u202a-\u202e]'), '')
-        .replaceAll(RegExp(r'[\u064b-\u065f\u0670]'), '')
-        .replaceAll('ـ', '')
-        .trim()
-        .replaceAll(RegExp(r'[{}]'), '')
-        .replaceAll(RegExp(r'\s+'), '_')
-        .replaceAll(RegExp(r'[^\u0600-\u06FFa-zA-Z0-9_]'), '_')
-        .replaceAll(RegExp(r'_+'), '_')
-        .replaceAll(RegExp(r'^_|_$'), '');
-  }
-
-  static String _compactPlaceholderKey(String text) {
-    return normalizePlaceholderKey(text).replaceAll('_', '').toLowerCase();
-  }
-
+  static const MethodChannel _pdfChannel = MethodChannel('idara_dz/pdf');
 
   static Future<String> exportSubstitutionRequest({
     required String requestDate,
@@ -170,7 +28,7 @@ class PdfExporter {
     required String university,
     required String graduationYear,
   }) async {
-    final bytes = await _buildSubstitutionRequestDocument(
+    final html = _buildSubstitutionRequestHtml(
       requestDate: requestDate,
       firstName: firstName,
       lastName: lastName,
@@ -186,8 +44,159 @@ class PdfExporter {
       university: university,
       graduationYear: graduationYear,
     );
-    final file = await _savePdfFile(title: 'طلب منصب استخلاف', bytes: bytes);
+
+    final file = await _createOutputFile(title: 'طلب منصب استخلاف');
+    await _htmlToPdf(html: html, outputPath: file.path);
     return file.path;
+  }
+
+  static Future<String> exportSimpleDocument({
+    required String title,
+    required Map<String, String> fields,
+  }) async {
+    final rows = fields.entries
+        .map(
+          (entry) => '''
+          <tr>
+            <th>${_escapeHtml(entry.key)}</th>
+            <td>${_escapeHtml(entry.value)}</td>
+          </tr>
+          ''',
+        )
+        .join();
+
+    final html = _wrapA4Html('''
+      <div class="simple-title">${_escapeHtml(title)}</div>
+      <table class="simple-table">$rows</table>
+    ''');
+
+    final file = await _createOutputFile(title: title);
+    await _htmlToPdf(html: html, outputPath: file.path);
+    return file.path;
+  }
+
+  static Future<String> exportTemplateDocument({
+    required String title,
+    required String? templateFilePath,
+    required Map<String, String> valuesByKey,
+    required Map<String, String> valuesByLabel,
+  }) async {
+    final templatePath = templateFilePath?.trim() ?? '';
+    String content = '';
+
+    if (templatePath.isNotEmpty && await File(templatePath).exists()) {
+      final extension = p.extension(templatePath).toLowerCase();
+      if (extension == '.txt' || extension == '.md') {
+        content = await File(templatePath).readAsString();
+        content = fillPlaceholders(
+          templateText: content,
+          valuesByKey: valuesByKey,
+          valuesByLabel: valuesByLabel,
+        );
+      }
+    }
+
+    if (content.trim().isEmpty) {
+      return exportSimpleDocument(title: title, fields: valuesByLabel);
+    }
+
+    final html = _wrapA4Html('''
+      <div class="simple-title">${_escapeHtml(title)}</div>
+      <div class="text-template">${_textToHtml(content)}</div>
+    ''');
+
+    final file = await _createOutputFile(title: title);
+    await _htmlToPdf(html: html, outputPath: file.path);
+    return file.path;
+  }
+
+  static Future<String> exportImageTemplateDocument({
+    required String title,
+    String? templateFilePath,
+    Map<String, String>? valuesByKey,
+    Map<String, String>? valuesByLabel,
+    List<dynamic>? fields,
+    List<dynamic>? positions,
+    Map<int, String>? valuesByFieldId,
+  }) async {
+    final labels = Map<String, String>.from(valuesByLabel ?? <String, String>{});
+    final keys = Map<String, String>.from(valuesByKey ?? <String, String>{});
+
+    if (fields != null && valuesByFieldId != null) {
+      for (final field in fields) {
+        try {
+          final int? fieldId = field.id is int ? field.id as int : field.sortOrder as int?;
+          if (fieldId == null) continue;
+          final value = valuesByFieldId[fieldId] ?? '';
+          labels[field.label as String] = value;
+          keys[field.keyName as String] = value;
+        } catch (_) {
+          // Backward compatibility with removed experimental screens.
+        }
+      }
+    }
+
+    return exportTemplateDocument(
+      title: title,
+      templateFilePath: templateFilePath,
+      valuesByKey: keys,
+      valuesByLabel: labels,
+    );
+  }
+
+  static String fillPlaceholders({
+    required String templateText,
+    required Map<String, String> valuesByKey,
+    required Map<String, String> valuesByLabel,
+  }) {
+    final replacements = <String, String>{};
+
+    void addReplacement(String rawKey, String value) {
+      final key = rawKey.trim();
+      if (key.isEmpty) return;
+      replacements[key] = value;
+      replacements[normalizePlaceholderKey(key)] = value;
+      replacements[_compactPlaceholderKey(key)] = value;
+    }
+
+    for (final entry in valuesByKey.entries) {
+      addReplacement(entry.key, entry.value);
+    }
+    for (final entry in valuesByLabel.entries) {
+      addReplacement(entry.key, entry.value);
+    }
+
+    return templateText.replaceAllMapped(RegExp(r'\{\{([\s\S]*?)\}\}'), (match) {
+      final rawPlaceholder = match.group(1) ?? '';
+      final candidates = <String>[
+        rawPlaceholder.trim(),
+        normalizePlaceholderKey(rawPlaceholder),
+        _compactPlaceholderKey(rawPlaceholder),
+      ];
+
+      for (final candidate in candidates) {
+        final value = replacements[candidate];
+        if (value != null) return value;
+      }
+      return '';
+    });
+  }
+
+  static String normalizePlaceholderKey(String text) {
+    return text
+        .replaceAll(RegExp(r'[\u200e\u200f\u202a-\u202e]'), '')
+        .replaceAll(RegExp(r'[\u064b-\u065f\u0670]'), '')
+        .replaceAll('ـ', '')
+        .trim()
+        .replaceAll(RegExp(r'[{}]'), '')
+        .replaceAll(RegExp(r'\s+'), '_')
+        .replaceAll(RegExp(r'[^\u0600-\u06FFa-zA-Z0-9_]'), '_')
+        .replaceAll(RegExp(r'_+'), '_')
+        .replaceAll(RegExp(r'^_|_\$'), '');
+  }
+
+  static String _compactPlaceholderKey(String text) {
+    return normalizePlaceholderKey(text).replaceAll('_', '').toLowerCase();
   }
 
   static Future<void> sharePdf(String filePath) async {
@@ -216,67 +225,29 @@ class PdfExporter {
     );
   }
 
-  static Future<Uint8List> _buildTextTemplateDocument({
-    required String filledText,
-  }) async {
-    final pdf = pw.Document();
-    final lines = filledText.split(RegExp(r'\r?\n'));
-    final theme = await _buildArabicPdfTheme();
+  static Future<File> _createOutputFile({required String title}) async {
+    final directory = await getApplicationDocumentsDirectory();
+    final outputDirectory = Directory(p.join(directory.path, 'generated_pdfs'));
+    if (!await outputDirectory.exists()) {
+      await outputDirectory.create(recursive: true);
+    }
 
-    pdf.addPage(
-      pw.MultiPage(
-        pageTheme: pw.PageTheme(
-          textDirection: pw.TextDirection.rtl,
-          margin: const pw.EdgeInsets.all(32),
-          theme: theme,
-        ),
-        build: (context) {
-          return [
-            pw.Directionality(
-              textDirection: pw.TextDirection.rtl,
-              child: pw.Column(
-                crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-                children: [
-                  ...lines.map(
-                    (line) => pw.Padding(
-                      padding: const pw.EdgeInsets.only(bottom: 7),
-                      child: pw.Text(
-                        line.trim().isEmpty ? ' ' : line,
-                        textAlign: pw.TextAlign.right,
-                        textDirection: pw.TextDirection.rtl,
-                        style: const pw.TextStyle(fontSize: 14, lineSpacing: 6),
-                      ),
-                    ),
-                  ),
-                  if (_hasUnfilledPlaceholders(filledText)) ...[
-                    pw.SizedBox(height: 18),
-                    pw.Container(
-                      padding: const pw.EdgeInsets.all(10),
-                      decoration: pw.BoxDecoration(
-                        border: pw.Border.all(color: PdfColors.orange300),
-                        borderRadius: pw.BorderRadius.circular(6),
-                      ),
-                      child: pw.Text(
-                        'تنبيه: بقيت رموز غير معوضة داخل النموذج. تأكد أن أسماء الحقول مطابقة للرموز.',
-                        textAlign: pw.TextAlign.right,
-                        textDirection: pw.TextDirection.rtl,
-                        style: const pw.TextStyle(fontSize: 10, color: PdfColors.orange900),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ];
-        },
-      ),
-    );
-
-    return pdf.save();
+    final safeTitle = _safeFileName(title);
+    final stamp = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
+    return File(p.join(outputDirectory.path, '${safeTitle}_$stamp.pdf'));
   }
 
+  static Future<void> _htmlToPdf({
+    required String html,
+    required String outputPath,
+  }) async {
+    await _pdfChannel.invokeMethod<void>('htmlToPdf', <String, dynamic>{
+      'html': html,
+      'outputPath': outputPath,
+    });
+  }
 
-  static Future<Uint8List> _buildSubstitutionRequestDocument({
+  static String _buildSubstitutionRequestHtml({
     required String requestDate,
     required String firstName,
     required String lastName,
@@ -291,225 +262,211 @@ class PdfExporter {
     required String specialization,
     required String university,
     required String graduationYear,
-  }) async {
-    final pdf = pw.Document();
-    final theme = await _buildArabicPdfTheme();
-    final fullName = _cleanPdfText('$lastName $firstName'.trim());
-    final address = _cleanPdfText(
-      [fullAddress, city]
-          .where((part) => part.trim().isNotEmpty)
-          .join(' - '),
-    );
-
-    final backgroundBytes =
-        await rootBundle.load('assets/templates/substitution_request_blank.png');
-    final background = pw.MemoryImage(backgroundBytes.buffer.asUint8List());
-
-    pdf.addPage(
-      pw.Page(
-        pageFormat: PdfPageFormat.a4,
-        margin: pw.EdgeInsets.zero,
-        theme: theme,
-        build: (context) {
-          return pw.Stack(
-            children: [
-              pw.Positioned.fill(
-                child: pw.Image(background, fit: pw.BoxFit.fill),
-              ),
-
-              // أعلى الصفحة
-              _templateValue(left: 104, top: 78, width: 90, text: _cleanPdfText(requestDate)),
-              _templateValue(left: 382, top: 111, width: 160, text: fullName),
-              _templateValue(left: 395, top: 139, width: 150, text: address),
-              _templateValue(left: 405, top: 167, width: 130, text: _cleanPdfText(phone)),
-
-              // وسط الصفحة
-              _templateValue(left: 210, top: 236, width: 250, text: _cleanPdfText(recipient), fontSize: 13.5, bold: true),
-              _templateValue(left: 177, top: 296, width: 190, text: _cleanPdfText(subjectMatter), fontSize: 13.5, bold: true),
-
-              // الفقرة الأولى
-              _templateValue(left: 173, top: 355, width: 160, text: _cleanPdfText(nationalId)),
-              _templateValue(left: 104, top: 428, width: 175, text: _cleanPdfText(subjectMatter)),
-
-              // فقرة الشهادة
-              _templateValue(left: 390, top: 489, width: 120, text: _cleanPdfText(degree)),
-              _templateValue(left: 230, top: 489, width: 110, text: _cleanPdfText(specialization)),
-              _templateValue(left: 98, top: 489, width: 52, text: _cleanPdfText(graduationYear)),
-              _templateValue(left: 295, top: 525, width: 240, text: _cleanPdfText(university)),
-
-              // الخبرة
-              _templateValue(left: 330, top: 587, width: 35, text: _cleanPdfText(experienceYears), align: pw.TextAlign.center),
-            ],
-          );
-        },
-      ),
-    );
-
-    return pdf.save();
-  }
-
-  static pw.Widget _templateValue({
-    required double left,
-    required double top,
-    required double width,
-    required String text,
-    double fontSize = 12.8,
-    bool bold = false,
-    pw.TextAlign align = pw.TextAlign.right,
   }) {
-    return pw.Positioned(
-      left: left,
-      top: top,
-      child: pw.SizedBox(
-        width: width,
-        child: pw.Directionality(
-          textDirection: pw.TextDirection.rtl,
-          child: pw.Text(
-          text.trim(),
-          maxLines: 2,
-          softWrap: true,
-          overflow: pw.TextOverflow.clip,
-          textAlign: align,
-          textDirection: pw.TextDirection.rtl,
-            style: pw.TextStyle(
-              fontSize: fontSize,
-              fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
-              lineSpacing: 2,
-            ),
-          ),
-        ),
-      ),
-    );
+    final fullName = _cleanText('$lastName $firstName');
+    final address = _joinClean([fullAddress, city], separator: ' - ');
+    final matter = _cleanText(subjectMatter);
+    final years = _cleanText(experienceYears);
+
+    return _wrapA4Html('''
+      <section class="substitution-page">
+        <header class="top-block">
+          <div class="date-block">في: <span>${_escapeHtml(_cleanText(requestDate))}</span></div>
+          <div class="person-block">
+            <div>الاسم واللقب: <span>${_escapeHtml(fullName)}</span></div>
+            <div>العنوان: <span>${_escapeHtml(address)}</span></div>
+            <div>الهاتف: <span dir="ltr">${_escapeHtml(_cleanText(phone))}</span></div>
+          </div>
+        </header>
+
+        <main class="substitution-content">
+          <p class="recipient">إلى السيد: <strong>${_escapeHtml(_cleanText(recipient))}</strong></p>
+
+          <p class="subject">الموضوع: <strong>طلب منصب استخلاف لمنصب أستاذ في مادة ${_escapeHtml(matter)}</strong></p>
+
+          <p>
+            أنا الممضي أسفله الحامل لبطاقة التعريف الوطنية رقم:
+            <span dir="ltr">${_escapeHtml(_cleanText(nationalId))}</span>
+            لي عظيم الشرف أن أتقدم إلى سيادتكم المحترمة بطلبي هذا والمتمثل في طلب الحصول على منصب استخلاف بصفة أستاذ في مادة ${_escapeHtml(matter)}.
+          </p>
+
+          <p>
+            كما أحيطكم علماً أنني متحصل على شهادة ${_escapeHtml(_cleanText(degree))}
+            تخصص ${_escapeHtml(_cleanText(specialization))}، خريج سنة
+            <span dir="ltr">${_escapeHtml(_cleanText(graduationYear))}</span>
+            من ${_escapeHtml(_cleanText(university))}.
+          </p>
+
+          <p>
+            ولدي خبرة في مجال التدريس تقدر بـ (<span dir="ltr">${_escapeHtml(years)}</span>) سنوات،
+            ولدي الرغبة والقدرة الكاملة على أداء هذه المهمة التربوية.
+          </p>
+
+          <p class="closing">في انتظار ردكم الإيجابي، تقبلوا مني فائق الاحترام والتقدير.</p>
+        </main>
+
+        <footer class="signature">توقيع المعني:</footer>
+      </section>
+    ''');
   }
 
-  static String _cleanPdfText(String text) {
+  static String _wrapA4Html(String bodyContent) {
+    return '''
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    @page { size: A4 portrait; margin: 0; }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #ffffff;
+      color: #111111;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    body {
+      width: 210mm;
+      min-height: 297mm;
+      font-family: Arial, Tahoma, sans-serif;
+      direction: rtl;
+    }
+    .substitution-page {
+      width: 210mm;
+      min-height: 297mm;
+      padding: 32mm 24mm 22mm 24mm;
+      position: relative;
+      direction: rtl;
+      font-size: 20px;
+      line-height: 1.85;
+    }
+    .top-block {
+      display: flex;
+      flex-direction: row-reverse;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 36mm;
+    }
+    .person-block {
+      width: 48%;
+      text-align: right;
+      line-height: 1.7;
+      white-space: normal;
+    }
+    .date-block {
+      width: 40%;
+      text-align: left;
+      line-height: 1.7;
+      direction: rtl;
+    }
+    .substitution-content {
+      width: 100%;
+      font-size: 21px;
+      line-height: 2.05;
+      text-align: right;
+    }
+    .substitution-content p {
+      margin: 0 0 11mm 0;
+      text-align: justify;
+      text-align-last: right;
+      direction: rtl;
+      unicode-bidi: plaintext;
+    }
+    .recipient {
+      text-align: center !important;
+      text-align-last: center !important;
+      font-weight: 500;
+      margin-bottom: 18mm !important;
+    }
+    .subject {
+      text-align: center !important;
+      text-align-last: center !important;
+      margin-bottom: 16mm !important;
+    }
+    .closing {
+      text-align: center !important;
+      text-align-last: center !important;
+      margin-top: 6mm !important;
+    }
+    .signature {
+      position: absolute;
+      left: 24mm;
+      bottom: 42mm;
+      font-size: 20px;
+      direction: rtl;
+    }
+    .simple-title {
+      width: 210mm;
+      padding: 28mm 22mm 8mm;
+      font-size: 26px;
+      font-weight: 700;
+      text-align: center;
+    }
+    .simple-table {
+      width: 166mm;
+      margin: 0 auto;
+      border-collapse: collapse;
+      direction: rtl;
+      font-size: 18px;
+    }
+    .simple-table th, .simple-table td {
+      border: 1px solid #dddddd;
+      padding: 10px 12px;
+      text-align: right;
+      vertical-align: top;
+    }
+    .simple-table th { width: 38%; background: #f4f4f4; }
+    .text-template {
+      width: 166mm;
+      margin: 0 auto;
+      font-size: 20px;
+      line-height: 1.9;
+      white-space: pre-wrap;
+      direction: rtl;
+      text-align: right;
+    }
+  </style>
+</head>
+<body>
+$bodyContent
+</body>
+</html>
+''';
+  }
+
+  static String _joinClean(List<String> values, {required String separator}) {
+    return values.map(_cleanText).where((value) => value.isNotEmpty).join(separator);
+  }
+
+  static String _cleanText(String text) {
     return text
         .replaceAll(RegExp(r'[\u200e\u200f\u202a-\u202e]'), '')
-        .replaceAll(RegExp(r'[\u0000-\u001f\u007f]'), '')
-        .replaceAll('�', '')
+        .replaceAll(RegExp(r'[\u0000-\u001f\u007f]'), ' ')
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
   }
 
-
-  static Future<Uint8List> _buildSimpleDocument({
-    required String title,
-    required Map<String, String> fields,
-  }) async {
-    final pdf = pw.Document();
-    final theme = await _buildArabicPdfTheme();
-
-    pdf.addPage(
-      pw.MultiPage(
-        pageTheme: pw.PageTheme(
-          textDirection: pw.TextDirection.rtl,
-          margin: const pw.EdgeInsets.all(32),
-          theme: theme,
-        ),
-        build: (context) {
-          return [
-            pw.Directionality(
-              textDirection: pw.TextDirection.rtl,
-              child: pw.Column(
-                crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-                children: [
-                  ...fields.entries.map(
-                    (entry) => pw.Container(
-                      margin: const pw.EdgeInsets.only(bottom: 10),
-                      padding: const pw.EdgeInsets.all(10),
-                      decoration: pw.BoxDecoration(
-                        border: pw.Border.all(color: PdfColors.grey300),
-                        borderRadius: pw.BorderRadius.circular(6),
-                      ),
-                      child: pw.Row(
-                        crossAxisAlignment: pw.CrossAxisAlignment.start,
-                        children: [
-                          pw.Expanded(
-                            flex: 2,
-                            child: pw.Text(
-                              entry.key,
-                              textDirection: pw.TextDirection.rtl,
-                              style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
-                            ),
-                          ),
-                          pw.SizedBox(width: 12),
-                          pw.Expanded(
-                            flex: 4,
-                            child: pw.Text(
-                              entry.value.isEmpty ? '-' : entry.value,
-                              textDirection: pw.TextDirection.rtl,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ];
-        },
-      ),
-    );
-
-    return pdf.save();
+  static String _escapeHtml(String text) {
+    return text
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
   }
 
-  static Future<pw.ThemeData> _buildArabicPdfTheme() async {
-    final regular = await _loadAndroidArabicFont();
-    if (regular == null) {
-      return pw.ThemeData.base();
-    }
-    return pw.ThemeData.withFont(base: regular, bold: regular);
-  }
-
-  static Future<pw.Font?> _loadAndroidArabicFont() async {
-    final candidates = <String>[
-      '/system/fonts/NotoNaskhArabic-Regular.ttf',
-      '/system/fonts/NotoSansArabic-Regular.ttf',
-      '/system/fonts/DroidNaskh-Regular.ttf',
-      '/system/fonts/Roboto-Regular.ttf',
-    ];
-
-    for (final path in candidates) {
-      final file = File(path);
-      if (await file.exists()) {
-        final bytes = await file.readAsBytes();
-        return pw.Font.ttf(bytes.buffer.asByteData());
-      }
-    }
-
-    return null;
-  }
-
-  static bool _hasUnfilledPlaceholders(String text) {
-    return RegExp(r'\{\{[^}]+\}\}').hasMatch(text);
-  }
-
-  static Future<File> _savePdfFile({
-    required String title,
-    required Uint8List bytes,
-  }) async {
-    final baseDir = await getApplicationDocumentsDirectory();
-    final pdfDir = Directory(p.join(baseDir.path, 'idara_dz_exports'));
-    if (!await pdfDir.exists()) {
-      await pdfDir.create(recursive: true);
-    }
-
-    final safeTitle = _safeFileName(title);
-    final stamp = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
-    final file = File(p.join(pdfDir.path, '${safeTitle}_$stamp.pdf'));
-    await file.writeAsBytes(bytes, flush: true);
-    return file;
+  static String _textToHtml(String text) {
+    return _escapeHtml(_cleanText(text)).replaceAll('\n', '<br>');
   }
 
   static String _safeFileName(String title) {
-    final normalized = title
-        .trim()
+    final cleaned = title
         .replaceAll(RegExp(r'[\\/:*?"<>|]'), '_')
         .replaceAll(RegExp(r'\s+'), '_')
-        .replaceAll(RegExp(r'_+'), '_')
-        .replaceAll(RegExp(r'^_|_$'), '');
-    return normalized.isEmpty ? 'IDARA_DZ' : normalized;
+        .trim();
+    return cleaned.isEmpty ? 'IDARA_DZ' : cleaned;
   }
 }
