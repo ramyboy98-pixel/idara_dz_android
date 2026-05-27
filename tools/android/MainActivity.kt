@@ -1,134 +1,112 @@
 package com.idaradz.idara_dz_android
 
+import android.annotation.SuppressLint
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.pdf.PdfDocument
 import android.os.Bundle
-import android.os.CancellationSignal
-import android.os.ParcelFileDescriptor
-import android.print.PageRange
-import android.print.PrintAttributes
-import android.print.PrintDocumentAdapter
+import android.os.Handler
+import android.os.Looper
+import android.view.View
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
+import java.io.FileOutputStream
 
 class MainActivity : FlutterActivity() {
     private val channelName = "idara_dz/pdf"
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName).setMethodCallHandler { call, result ->
-            if (call.method == "htmlToPdf") {
-                val html = call.argument<String>("html")
-                val outputPath = call.argument<String>("outputPath")
-                if (html.isNullOrBlank() || outputPath.isNullOrBlank()) {
-                    result.error("INVALID_ARGS", "html أو outputPath غير صالح.", null)
-                    return@setMethodCallHandler
+            when (call.method) {
+                "createPdfFromHtml", "htmlToPdf", "exportHtmlToPdf" -> {
+                    val html = call.argument<String>("html") ?: ""
+                    val filePath = call.argument<String>("filePath")
+                        ?: call.argument<String>("path")
+                        ?: ""
+
+                    if (html.isBlank()) {
+                        result.error("EMPTY_HTML", "HTML content is empty", null)
+                        return@setMethodCallHandler
+                    }
+                    if (filePath.isBlank()) {
+                        result.error("EMPTY_PATH", "PDF file path is empty", null)
+                        return@setMethodCallHandler
+                    }
+
+                    createPdfFromHtml(html, filePath, result)
                 }
-                renderHtmlToPdf(html, outputPath, result)
-            } else {
-                result.notImplemented()
+                else -> result.notImplemented()
             }
         }
     }
 
-    private fun renderHtmlToPdf(html: String, outputPath: String, result: MethodChannel.Result) {
-        runOnUiThread {
-            val webView = WebView(this)
-            webView.setBackgroundColor(Color.WHITE)
-            webView.settings.javaScriptEnabled = false
-            webView.settings.loadWithOverviewMode = false
-            webView.settings.useWideViewPort = false
+    @SuppressLint("SetJavaScriptEnabled")
+    private fun createPdfFromHtml(html: String, filePath: String, result: MethodChannel.Result) {
+        Handler(Looper.getMainLooper()).post {
+            try {
+                val webView = WebView(this)
+                webView.setBackgroundColor(Color.WHITE)
+                webView.settings.javaScriptEnabled = false
+                webView.settings.loadWithOverviewMode = false
+                webView.settings.useWideViewPort = false
 
-            var finished = false
-            fun finishSuccess() {
-                if (!finished) {
-                    finished = true
-                    webView.destroy()
-                    result.success(outputPath)
+                // A4 at 150 DPI. This keeps the page ratio stable and avoids Android Print callbacks.
+                val pageWidthPx = 1240
+                val pageHeightPx = 1754
+
+                webView.layoutParams = android.view.ViewGroup.LayoutParams(pageWidthPx, pageHeightPx)
+                webView.visibility = View.INVISIBLE
+
+                webView.webViewClient = object : WebViewClient() {
+                    override fun onPageFinished(view: WebView, url: String?) {
+                        Handler(Looper.getMainLooper()).postDelayed({
+                            try {
+                                view.measure(
+                                    View.MeasureSpec.makeMeasureSpec(pageWidthPx, View.MeasureSpec.EXACTLY),
+                                    View.MeasureSpec.makeMeasureSpec(pageHeightPx, View.MeasureSpec.EXACTLY)
+                                )
+                                view.layout(0, 0, pageWidthPx, pageHeightPx)
+
+                                val document = PdfDocument()
+                                val pageInfo = PdfDocument.PageInfo.Builder(pageWidthPx, pageHeightPx, 1).create()
+                                val page = document.startPage(pageInfo)
+                                val canvas: Canvas = page.canvas
+                                canvas.drawColor(Color.WHITE)
+                                view.draw(canvas)
+                                document.finishPage(page)
+
+                                val outputFile = File(filePath)
+                                outputFile.parentFile?.mkdirs()
+                                FileOutputStream(outputFile).use { stream ->
+                                    document.writeTo(stream)
+                                }
+                                document.close()
+                                view.destroy()
+
+                                result.success(filePath)
+                            } catch (e: Exception) {
+                                result.error("PDF_RENDER_ERROR", e.message, null)
+                            }
+                        }, 500)
+                    }
                 }
+
+                webView.loadDataWithBaseURL(
+                    null,
+                    html,
+                    "text/html",
+                    "UTF-8",
+                    null
+                )
+            } catch (e: Exception) {
+                result.error("PDF_CREATE_ERROR", e.message, null)
             }
-            fun finishError(code: String, message: String, error: Throwable? = null) {
-                if (!finished) {
-                    finished = true
-                    webView.destroy()
-                    result.error(code, message, error?.message)
-                }
-            }
-
-            webView.webViewClient = object : WebViewClient() {
-                override fun onPageFinished(view: WebView?, url: String?) {
-                    webView.postDelayed({
-                        try {
-                            val outputFile = File(outputPath)
-                            outputFile.parentFile?.mkdirs()
-                            if (outputFile.exists()) outputFile.delete()
-
-                            val printAdapter = webView.createPrintDocumentAdapter("IDARA_DZ_Document")
-                            val attributes = PrintAttributes.Builder()
-                                .setMediaSize(PrintAttributes.MediaSize.ISO_A4)
-                                .setResolution(PrintAttributes.Resolution("pdf", "pdf", 300, 300))
-                                .setMinMargins(PrintAttributes.Margins.NO_MARGINS)
-                                .setColorMode(PrintAttributes.COLOR_MODE_COLOR)
-                                .build()
-
-                            printAdapter.onLayout(
-                                null,
-                                attributes,
-                                null,
-                                object : PrintDocumentAdapter.LayoutResultCallback() {
-                                    override fun onLayoutFinished(info: android.print.PrintDocumentInfo?, changed: Boolean) {
-                                        try {
-                                            val descriptor = ParcelFileDescriptor.open(
-                                                outputFile,
-                                                ParcelFileDescriptor.MODE_CREATE or
-                                                    ParcelFileDescriptor.MODE_TRUNCATE or
-                                                    ParcelFileDescriptor.MODE_READ_WRITE
-                                            )
-
-                                            printAdapter.onWrite(
-                                                arrayOf(PageRange.ALL_PAGES),
-                                                descriptor,
-                                                CancellationSignal(),
-                                                object : PrintDocumentAdapter.WriteResultCallback() {
-                                                    override fun onWriteFinished(pages: Array<PageRange>?) {
-                                                        try {
-                                                            descriptor.close()
-                                                        } catch (_: Exception) {
-                                                        }
-                                                        finishSuccess()
-                                                    }
-
-                                                    override fun onWriteFailed(error: CharSequence?) {
-                                                        try {
-                                                            descriptor.close()
-                                                        } catch (_: Exception) {
-                                                        }
-                                                        finishError("WRITE_FAILED", error?.toString() ?: "فشل إنشاء PDF.")
-                                                    }
-                                                }
-                                            )
-                                        } catch (error: Throwable) {
-                                            finishError("WRITE_EXCEPTION", "فشل حفظ PDF.", error)
-                                        }
-                                    }
-
-                                    override fun onLayoutFailed(error: CharSequence?) {
-                                        finishError("LAYOUT_FAILED", error?.toString() ?: "فشل إعداد صفحة PDF.")
-                                    }
-                                },
-                                Bundle()
-                            )
-                        } catch (error: Throwable) {
-                            finishError("PDF_EXCEPTION", "فشل إنشاء PDF من HTML.", error)
-                        }
-                    }, 500)
-                }
-            }
-
-            webView.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
         }
     }
 }
