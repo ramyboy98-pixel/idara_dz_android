@@ -43,6 +43,11 @@ jobs:
             flutter create . --platforms=android --org com.idaradz
           fi
 
+      - name: Install native WebView PDF bridge
+        run: |
+          mkdir -p android/app/src/main/kotlin/com/idaradz/idara_dz_android
+          cp tools/android/MainActivity.kt android/app/src/main/kotlin/com/idaradz/idara_dz_android/MainActivity.kt
+
       - name: Remove default Flutter test file
         run: rm -rf test
 
