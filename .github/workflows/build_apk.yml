@@ -9,7 +9,6 @@ on:
 
 jobs:
   build:
-    name: Build Flutter Android APK
     runs-on: ubuntu-latest
 
     steps:
@@ -28,14 +27,10 @@ jobs:
 
       - name: Install Flutter manually without flutter-action
         run: |
-          set -e
-          FLUTTER_DIR="$HOME/flutter"
-          if [ ! -d "$FLUTTER_DIR" ]; then
-            git clone https://github.com/flutter/flutter.git "$FLUTTER_DIR" --depth 1 --branch 3.24.5
-          fi
-          echo "$FLUTTER_DIR/bin" >> $GITHUB_PATH
-          "$FLUTTER_DIR/bin/flutter" config --no-analytics
-          "$FLUTTER_DIR/bin/flutter" --version
+          git clone https://github.com/flutter/flutter.git "$HOME/flutter" --depth 1 --branch 3.24.5
+          echo "$HOME/flutter/bin" >> $GITHUB_PATH
+          "$HOME/flutter/bin/flutter" config --no-analytics
+          "$HOME/flutter/bin/flutter" --version
 
       - name: Create Android platform files if missing
         run: |
@@ -43,26 +38,32 @@ jobs:
             flutter create . --platforms=android --org com.idaradz
           fi
 
-      - name: Install native WebView PDF bridge
+      - name: Remove default Flutter test file
+        run: rm -rf test
+
+      - name: Install custom MainActivity
         run: |
           mkdir -p android/app/src/main/kotlin/com/idaradz/idara_dz_android
           cp tools/android/MainActivity.kt android/app/src/main/kotlin/com/idaradz/idara_dz_android/MainActivity.kt
 
-      - name: Remove default Flutter test file
-        run: rm -rf test
-
       - name: Force modern Android SDK settings
         run: |
-          if [ -f "android/app/build.gradle" ]; then
-            sed -i 's/compileSdkVersion flutter.compileSdkVersion/compileSdkVersion 35/g' android/app/build.gradle
-            sed -i 's/targetSdkVersion flutter.targetSdkVersion/targetSdkVersion 35/g' android/app/build.gradle
-            sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 23/g' android/app/build.gradle
-          fi
-          if [ -f "android/app/build.gradle.kts" ]; then
-            sed -i 's/compileSdk = flutter.compileSdkVersion/compileSdk = 35/g' android/app/build.gradle.kts
-            sed -i 's/targetSdk = flutter.targetSdkVersion/targetSdk = 35/g' android/app/build.gradle.kts
-            sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 23/g' android/app/build.gradle.kts
-          fi
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('android/app/build.gradle')
+          text = p.read_text()
+          text = text.replace('compileSdkVersion flutter.compileSdkVersion', 'compileSdkVersion 35')
+          text = text.replace('compileSdk flutter.compileSdkVersion', 'compileSdk 35')
+          text = text.replace('compileSdkVersion 34', 'compileSdkVersion 35')
+          text = text.replace('compileSdk = 34', 'compileSdk = 35')
+          text = text.replace('targetSdkVersion flutter.targetSdkVersion', 'targetSdkVersion 35')
+          text = text.replace('targetSdk flutter.targetSdkVersion', 'targetSdk 35')
+          text = text.replace('targetSdkVersion 34', 'targetSdkVersion 35')
+          text = text.replace('targetSdk = 34', 'targetSdk = 35')
+          text = text.replace('minSdkVersion flutter.minSdkVersion', 'minSdkVersion 23')
+          text = text.replace('minSdk flutter.minSdkVersion', 'minSdk 23')
+          p.write_text(text)
+          PY
 
       - name: Get packages
         run: flutter pub get
